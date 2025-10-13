@@ -1,5 +1,3 @@
-
-
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import MainLayout from '../components/MainLayout';
 import { useData } from '../DataContext';
@@ -368,30 +366,73 @@ const ReportsPage: React.FC = () => {
     const handleDownloadPdf = async () => {
         const reportElement = reportPreviewRef.current;
         if (!reportElement) return;
-
-        setIsGenerating(true); 
+    
+        setIsGenerating(true);
         setGenerationMessage('PDF oluşturuluyor...');
-
-        const canvas = await html2canvas(reportElement, { 
-            scale: 2,
-            useCORS: true, 
-            logging: false 
-        });
-        const imgData = canvas.toDataURL('image/png');
-        
-        const pdf = new jsPDF({
-            orientation: 'portrait',
-            unit: 'mm',
-            format: 'a4'
-        });
-
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`Rapor_${selectedManager}_${new Date().toISOString().split('T')[0]}.pdf`);
-        setIsGenerating(false);
-        setGenerationMessage('');
+    
+        try {
+            // Create a single high-resolution canvas of the entire report
+            const canvas = await html2canvas(reportElement, {
+                scale: 2, // Higher scale for better quality
+                useCORS: true,
+                logging: false,
+                width: reportElement.scrollWidth,
+                height: reportElement.scrollHeight,
+                windowWidth: reportElement.scrollWidth,
+                windowHeight: reportElement.scrollHeight
+            });
+    
+            const canvasWidth = canvas.width;
+            const canvasHeight = canvas.height;
+    
+            // Setup PDF document
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+    
+            // Calculate the height of the canvas slice that fits one A4 page
+            const pageCanvasHeight = canvasWidth * (pdfHeight / pdfWidth);
+            let position = 0;
+    
+            // Loop through the canvas and add pages to the PDF
+            while (position < canvasHeight) {
+                const sliceHeight = Math.min(canvasHeight - position, pageCanvasHeight);
+    
+                // Create a temporary canvas for the current page slice
+                const pageCanvas = document.createElement('canvas');
+                pageCanvas.width = canvasWidth;
+                pageCanvas.height = sliceHeight;
+                const pageCtx = pageCanvas.getContext('2d');
+    
+                if (pageCtx) {
+                    // Draw the slice from the main canvas onto the page canvas
+                    pageCtx.drawImage(canvas, 0, position, canvasWidth, sliceHeight, 0, 0, canvasWidth, sliceHeight);
+                    const imgData = pageCanvas.toDataURL('image/png');
+    
+                    // Calculate the image height on the PDF page to maintain aspect ratio
+                    const pageImgHeight = (sliceHeight * pdfWidth) / canvasWidth;
+    
+                    // Add the image to the PDF
+                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pageImgHeight);
+                }
+    
+                // Move to the next slice
+                position += pageCanvasHeight;
+    
+                // Add a new page if there is more content
+                if (position < canvasHeight) {
+                    pdf.addPage();
+                }
+            }
+    
+            pdf.save(`Rapor_${selectedManager}_${new Date().toISOString().split('T')[0]}.pdf`);
+        } catch (error) {
+            console.error("PDF generation failed:", error);
+            setGenerationMessage("PDF oluşturulurken bir hata oluştu.");
+        } finally {
+            setIsGenerating(false);
+            setGenerationMessage('');
+        }
     };
     
     const handleResetFilters = () => {
