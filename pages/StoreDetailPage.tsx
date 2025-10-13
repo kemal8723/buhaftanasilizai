@@ -74,10 +74,11 @@ const TurnoverHistoryCard: React.FC<{ history: TurnoverHistory[]; storeName: str
 };
 
 const ActionItem: React.FC<{ action: ActionTaken; commentId: string; actionIndex: number }> = ({ action, commentId, actionIndex }) => {
-    const { toggleReactionOnAction, deleteCommentAction, editCommentAction, currentUser } = useData();
+    const { toggleReactionOnAction, deleteCommentAction, editCommentAction, currentUser, getUserImageUrlByName } = useData();
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(action.text);
     const availableReactions = ['👍', '❤️', '👏', '🎉', '💡', '🤔'];
+    const authorImageUrl = getUserImageUrlByName(action.author);
 
     const handleEditSave = () => {
         if (editText.trim() !== action.text) {
@@ -90,8 +91,8 @@ const ActionItem: React.FC<{ action: ActionTaken; commentId: string; actionIndex
 
     return (
         <div className={`action-item`}>
-            <div className="action-author-avatar">
-                <AnonymousAvatarIcon />
+            <div className="action-author-avatar" style={authorImageUrl ? { backgroundImage: `url("${authorImageUrl}")` } : {}}>
+                {!authorImageUrl && <AnonymousAvatarIcon />}
             </div>
             <div className="action-content">
                 <div className="action-header">
@@ -161,7 +162,7 @@ const getRatingClass = (rating: number | undefined): string => {
 };
 
 const CommentCard: React.FC<{ comment: Comment, isHighlighted: boolean }> = ({ comment, isHighlighted }) => {
-    const { addCommentAction } = useData();
+    const { addCommentAction, profileImageUrl } = useData();
     const [actionText, setActionText] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -204,8 +205,8 @@ const CommentCard: React.FC<{ comment: Comment, isHighlighted: boolean }> = ({ c
                             </div>
                         )}
                         <form onSubmit={handleAddAction} className="action-form">
-                             <div className="action-author-avatar">
-                                <AnonymousAvatarIcon />
+                             <div className="action-author-avatar" style={profileImageUrl ? { backgroundImage: `url("${profileImageUrl}")` } : {}}>
+                                {!profileImageUrl && <AnonymousAvatarIcon />}
                             </div>
                             <input
                                 ref={inputRef}
@@ -225,11 +226,44 @@ const CommentCard: React.FC<{ comment: Comment, isHighlighted: boolean }> = ({ c
     );
 };
 
+const StoreDetailPageSkeleton: React.FC = () => (
+    <MainLayout>
+        <div className="content-container">
+            <div className="page-header" style={{ alignItems: 'flex-start', gap: '1rem', marginBottom: '1rem' }}>
+                <div className="loading-bar" style={{ height: '24px', width: '180px', borderRadius: 'var(--border-radius)' }}></div>
+                <div style={{ flexGrow: 1 }}>
+                    <div className="loading-bar" style={{ height: '36px', width: 'clamp(250px, 50%, 400px)', borderRadius: 'var(--border-radius)' }}></div>
+                    <div className="loading-bar" style={{ height: '20px', width: 'clamp(200px, 40%, 300px)', marginTop: '0.75rem', borderRadius: 'var(--border-radius)' }}></div>
+                </div>
+            </div>
+            <div className="dashboard-grid-3col">
+                <div className="card loading-bar" style={{ height: '120px', padding: 0, border: 'none' }}></div>
+                <div className="card loading-bar" style={{ height: '120px', padding: 0, border: 'none' }}></div>
+                <div className="card loading-bar" style={{ height: '120px', padding: 0, border: 'none' }}></div>
+            </div>
+            <div className="dashboard-grid-2col" style={{ marginTop: '1.5rem' }}>
+                <div className="card loading-bar" style={{ height: '400px', padding: 0, border: 'none' }}></div>
+                <div className="card loading-bar" style={{ height: '400px', padding: 0, border: 'none' }}></div>
+            </div>
+            <div className="section">
+                <div className="card loading-bar" style={{ height: '400px', padding: 0, border: 'none' }}></div>
+            </div>
+            <div className="section">
+                <div className="loading-bar" style={{ height: '30px', width: '250px', marginBottom: '1rem', borderRadius: 'var(--border-radius)' }}></div>
+                <div className="card loading-bar" style={{ height: '88px', padding: 0, border: 'none' }}></div>
+            </div>
+             <div className="section">
+                <div className="card loading-bar" style={{ height: '200px', padding: 0, border: 'none' }}></div>
+            </div>
+        </div>
+    </MainLayout>
+);
+
 
 const StoreDetailPage: React.FC = () => {
     const { storeId } = useParams<{ storeId: string }>();
     const location = useLocation();
-    const { storeData, comments, loading, getManagerForStore } = useData();
+    const { getStoreById, getCommentsForStore, loading, getManagerForStore } = useData();
 
     const [sentimentFilter, setSentimentFilter] = useState('all');
     const [categoryFilter, setCategoryFilter] = useState('all');
@@ -269,12 +303,12 @@ const StoreDetailPage: React.FC = () => {
     }, [location.hash, loading]); // Rerun when hash changes or data finishes loading
 
 
-    const store = useMemo(() => storeData.find(s => s.id === storeId), [storeData, storeId]);
+    const store = useMemo(() => storeId ? getStoreById(storeId) : undefined, [storeId, getStoreById]);
     
     const storeComments = useMemo(() => {
         if (!store) return [];
-        return comments.filter(c => c.store === store.name);
-    }, [comments, store]);
+        return getCommentsForStore(store.name);
+    }, [store, getCommentsForStore]);
     
     const manager = useMemo(() => store ? getManagerForStore(store.name) : 'N/A', [store, getManagerForStore]);
     
@@ -311,7 +345,7 @@ const StoreDetailPage: React.FC = () => {
     }, [storeComments]);
     
     if (loading) {
-        return <MainLayout><div className="content-container" style={{ justifyContent: 'center', alignItems: 'center' }}><p>Yükleniyor...</p></div></MainLayout>;
+        return <StoreDetailPageSkeleton />;
     }
 
     if (!store) {

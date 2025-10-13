@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 // FIX: Changed AnomalyDetection to AnomalyDetectionResponse to match the exported type from './types'.
 import { StoreData, Comment, User, ChartData, TurnoverData, WeekFilterOption, MonthFilterOption, TurnoverHistory, UploadedFile, ActionTaken, AIAnalysisState, AIAnalysisResponse, TurnoverRiskAnalysis, SuccessAnalysisResponse, AnomalyDetectionResponse, WordCloudWord } from './types';
 import * as XLSX from 'xlsx';
@@ -422,6 +422,7 @@ interface DataContextType {
     getSomForStore: (storeName: string) => string | undefined;
     getManagersForSom: (som: string) => string[];
     updateProfileImage: (url: string | null) => void;
+    getUserImageUrlByName: (name: string) => string | null;
     addCommentAction: (commentId: string, actionText: string) => void;
     toggleReactionOnAction: (commentId: string, actionIndex: number, emoji: string) => void;
     deleteCommentAction: (commentId: string, actionIndex: number) => void;
@@ -432,6 +433,8 @@ interface DataContextType {
     generateSuccess: (storeData: StoreData[], comments: Comment[]) => void;
     generateAnomalies: (storeData: StoreData[], comments: Comment[]) => void;
     resetAIAnalyses: () => void;
+    getStoreById: (storeId: string) => StoreData | undefined;
+    getCommentsForStore: (storeName: string) => Comment[];
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -446,9 +449,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [somToManagersMap, setSomToManagersMap] = useState<Map<string, Set<string>>>(new Map());
     const [allTurnoverData, setAllTurnoverData] = useState<Map<string, TurnoverData>>(new Map());
     
+    // Role-filtered data (visible to components)
     const [storeData, setStoreData] = useState<StoreData[]>([]);
     const [comments, setComments] = useState<Comment[]>([]);
     
+    // Indexed data for performance
+    const [storesById, setStoresById] = useState<Map<string, StoreData>>(new Map());
+    const [commentsByStoreName, setCommentsByStoreName] = useState<Map<string, Comment[]>>(new Map());
+
     // Filter options
     const [managers, setManagers] = useState<string[]>([]);
     const [soms, setSoms] = useState<string[]>([]);
@@ -463,7 +471,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [processingMessage, setProcessingMessage] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
+    const [userProfileImages, setUserProfileImages] = useState<Record<string, string>>({});
     const [currentUser, setCurrentUser] = useState<User | null>(null);
 
     const initialAIState: AIAnalysisState = {
@@ -485,10 +493,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setCurrentUser(JSON.parse(savedCurrentUser));
             }
 
-            const savedImageUrl = localStorage.getItem('profileImageUrl');
-            if (savedImageUrl && savedImageUrl !== 'null') {
-                setProfileImageUrl(JSON.parse(savedImageUrl));
-            }
+            const savedProfileImages = localStorage.getItem('userProfileImages');
+            setUserProfileImages(savedProfileImages ? JSON.parse(savedProfileImages) : {});
 
             const savedComments = localStorage.getItem('comments');
             const savedStoreData = localStorage.getItem('storeData');
@@ -591,6 +597,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         setStoreData(filteredStores);
         setComments(filteredComments);
+        
+        // Create indexed data from filtered results for performance
+        const newStoresById = new Map<string, StoreData>();
+        filteredStores.forEach(store => {
+            newStoresById.set(store.id, store);
+        });
+        setStoresById(newStoresById);
+
+        const newCommentsByStoreName = new Map<string, Comment[]>();
+        filteredComments.forEach(comment => {
+            if (!newCommentsByStoreName.has(comment.store)) {
+                newCommentsByStoreName.set(comment.store, []);
+            }
+            newCommentsByStoreName.get(comment.store)!.push(comment);
+        });
+        setCommentsByStoreName(newCommentsByStoreName);
         
         const uniqueManagers = ['Tümü', ...new Set(Array.from(storeManagerMap.values()))];
         setManagers(uniqueManagers);
@@ -766,11 +788,34 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem('comments', JSON.stringify(updatedComments));
     }, [allComments]);
 
+    const profileImageUrl = currentUser ? userProfileImages[currentUser.id] || null : null;
 
     const updateProfileImage = useCallback((url: string | null) => {
-        setProfileImageUrl(url);
-        localStorage.setItem('profileImageUrl', JSON.stringify(url));
-    }, []);
+        if (!currentUser) return;
+        const updatedImages = { ...userProfileImages };
+        if (url) {
+            updatedImages[currentUser.id] = url;
+        } else {
+            delete updatedImages[currentUser.id];
+        }
+        setUserProfileImages(updatedImages);
+        localStorage.setItem('userProfileImages', JSON.stringify(updatedImages));
+    }, [currentUser, userProfileImages]);
+    
+    const usersByName = useMemo(() => {
+        const map = new Map<string, User>();
+        allUsers.forEach(u => map.set(u.name, u));
+        return map;
+    }, [allUsers]);
+
+    const getUserImageUrlByName = useCallback((name: string): string | null => {
+        const user = usersByName.get(name);
+        if (user && userProfileImages[user.id]) {
+            return userProfileImages[user.id];
+        }
+        return null;
+    }, [usersByName, userProfileImages]);
+
 
     const getManagerForStore = useCallback((storeName: string) => {
         return storeManagerMap.get(storeName);
@@ -788,6 +833,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const resetAIAnalyses = useCallback(() => {
         setAiAnalyses(initialAIState);
     }, []);
+
+    const getStoreById = useCallback((storeId: string): StoreData | undefined => {
+        return storesById.get(storeId);
+    }, [storesById]);
+
+    const getCommentsForStore = useCallback((storeName: string): Comment[] => {
+        return commentsByStoreName.get(storeName) || [];
+    }, [commentsByStoreName]);
 
     const generateSummary = useCallback(async (storeData: StoreData[], comments: Comment[]) => {
         if (!process.env.API_KEY) {
@@ -1392,9 +1445,9 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
             localStorage.setItem('feedbackFileHistory', JSON.stringify(updatedHistory));
 
 
-        } catch (err) {
+        } catch (err: unknown) {
             console.error("Upload processing failed:", err);
-            // FIX: The 'err' variable from a catch block is of type 'unknown'. We must safely extract the message before passing it to functions expecting a string.
+            // FIX: The 'err' object in a catch block is of type 'unknown'. We must first verify it is an Error instance before accessing 'err.message' to avoid a type error.
             const message = err instanceof Error ? err.message : String(err);
             setError(message);
             throw new Error(message);
@@ -1491,9 +1544,9 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
             localStorage.setItem('turnoverFileHistory', JSON.stringify(updatedHistory));
 
 
-        } catch (err) {
+        } catch (err: unknown) {
             console.error("Turnover upload failed:", err);
-            // FIX: The 'err' variable from a catch block is of type 'unknown'. We must safely extract the message before passing it to functions expecting a string.
+            // FIX: The 'err' object in a catch block is of type 'unknown'. We must first verify it is an Error instance before accessing 'err.message' to avoid a type error.
             const message = err instanceof Error ? err.message : String(err);
             setError(message);
             throw new Error(message);
@@ -1649,6 +1702,7 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
         getManagersForSom,
         profileImageUrl,
         updateProfileImage,
+        getUserImageUrlByName,
         login,
         signUp,
         logout,
@@ -1669,6 +1723,8 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
         generateSuccess,
         generateAnomalies,
         resetAIAnalyses,
+        getStoreById,
+        getCommentsForStore,
     };
 
     return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

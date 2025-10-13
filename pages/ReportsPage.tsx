@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import MainLayout from '../components/MainLayout';
 import { useData } from '../DataContext';
@@ -7,6 +8,7 @@ import html2canvas from 'html2canvas';
 import LogoImage from '../components/LogoImage';
 import { HorizontalBarChartCard } from '../components/ChartCards';
 import SatisfactionDistributionCard from '../components/SatisfactionDistributionCard';
+// FIX: Updated deprecated GoogleGenerativeAI to GoogleGenAI.
 import { GoogleGenAI } from "@google/genai";
 
 
@@ -310,6 +312,7 @@ const ReportsPage: React.FC = () => {
         let aiSummary = "Yapay zeka özeti oluşturulamadı.";
         if (process.env.API_KEY && keywordFilteredComments.length > 0) {
             try {
+                // FIX: Updated deprecated GoogleGenerativeAI to GoogleGenAI.
                 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
                 
                 const keywordPromptPart = isKeywordReport 

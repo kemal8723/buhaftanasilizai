@@ -71,21 +71,31 @@ const calculateHistory = (
     calculator: (group: Comment[]) => number
 ): ChartData[] => {
     const historyByPeriod: { [key: string]: Comment[] } = {};
-    const monthNames = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+    const monthOrder = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+    const shortMonthNames = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
     
     comments.forEach(comment => {
-        let key = '';
+        let key: string | undefined;
+        
         if (period === 'monthly') {
             try {
                 const date = new Date(comment.date);
-                if(isNaN(date.getTime())) return;
-                key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                if (isNaN(date.getTime())) return;
+                
+                const year = date.getFullYear();
+                // Prioritize the 'month' string field from the comment if it exists and is valid
+                const monthIndex = comment.month ? monthOrder.indexOf(comment.month) : date.getMonth();
+                
+                if (monthIndex > -1) {
+                    // Create a sortable key like '2024-01' (for January)
+                    key = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+                }
             } catch { return; }
         } else { // weekly
             key = comment.week || getWeekOfYear(comment.date);
         }
 
-        if (key === 'Bilinmeyen') return;
+        if (!key || key === 'Bilinmeyen') return;
         if (!historyByPeriod[key]) historyByPeriod[key] = [];
         historyByPeriod[key].push(comment);
     });
@@ -95,8 +105,9 @@ const calculateHistory = (
         .map(key => {
             let name = key;
             if(period === 'monthly') {
+                // Convert '2024-01' back to a display name 'Oca'
                 const monthIndex = parseInt(key.split('-')[1]) - 1; 
-                name = monthNames[monthIndex];
+                name = shortMonthNames[monthIndex];
             } else {
                 name = `H${key.split('-W')[1]}`;
             }
@@ -121,7 +132,7 @@ const calculateAllDashboardMetrics = (comments: Comment[]): DashboardChartMetric
     const activeStoresCalc = (group: Comment[]) => new Set(group.map(c => c.store)).size;
     const actionRateCalc = (group: Comment[]) => {
         const negative = group.filter(c => c.sentiment === 'negative');
-        if (negative.length === 0) return 0;
+        if (negative.length === 0) return 100; // If no negative comments, 100% of actions are taken.
         const withAction = negative.filter(c => c.actions && c.actions.length > 0).length;
         return (withAction / negative.length) * 100;
     };

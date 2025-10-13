@@ -1405,7 +1405,7 @@ input, button, select, textarea {
 }
 .loading-bar {
     height: 16px;
-    background-color: var(--app-bg-color);
+    background-color: #e2e8f0;
     border-radius: var(--border-radius);
     animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
@@ -2429,6 +2429,8 @@ input, button, select, textarea {
     align-items: center;
     justify-content: center;
     color: var(--text-color-light);
+    background-size: cover;
+    background-position: center;
 }
 .action-author-avatar svg {
     width: 20px;
