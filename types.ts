@@ -1,4 +1,3 @@
-
 // FIX: Removed self-import of ChartData which caused a conflict with local declaration.
 // FIX: Defined ChartData interface locally to resolve a circular dependency and export error.
 export interface ChartData {
@@ -132,11 +131,11 @@ export interface AnomalyDetectionResponse {
 }
 
 export interface AIAnalysisState {
-  summary: { result: string | null; loading: boolean; error: string | null; };
-  focus: { result: AIAnalysisResponse | null; loading: boolean; error: string | null; };
-  turnover: { result: TurnoverRiskAnalysis | null; loading: boolean; error: string | null; };
-  success: { result: SuccessAnalysisResponse | null; loading: boolean; error: string | null; };
-  anomalies: { result: AnomalyDetectionResponse | null; loading: boolean; error: string | null; };
+  summary: { result: string | null; loading: boolean; error: string | null; fingerprint?: string | null; };
+  focus: { result: AIAnalysisResponse | null; loading: boolean; error: string | null; fingerprint?: string | null; };
+  turnover: { result: TurnoverRiskAnalysis | null; loading: boolean; error: string | null; fingerprint?: string | null; };
+  success: { result: SuccessAnalysisResponse | null; loading: boolean; error: string | null; fingerprint?: string | null; };
+  anomalies: { result: AnomalyDetectionResponse | null; loading: boolean; error: string | null; fingerprint?: string | null; };
 }
 
 export interface ChatMessage {

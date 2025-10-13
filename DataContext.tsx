@@ -78,6 +78,14 @@ const getApiErrorMessage = (error: any): string => {
     return "Yapay zeka içgörüsü oluşturulurken bir hata oluştu. Lütfen bağlantınızı kontrol edip tekrar deneyin.";
 };
 
+const createAnalysisFingerprint = (storeData: StoreData[], comments: Comment[]): string => {
+    if (!storeData || storeData.length === 0) return 'no-data';
+    const storeIds = storeData.map(s => s.id).sort().join(',');
+    const commentCount = comments.length;
+    // Hashing the store IDs and comment count should be a good enough fingerprint for this purpose.
+    return `${storeData.length}-${commentCount}-${storeIds}`;
+};
+
 
 const initialUsers: User[] = [
     { id: 'u1', name: 'Selin Vural', email: 'selin.vural@example.com', password: '123456', title:'Direktör', role: 'Direktör', status: 'Aktif' },
@@ -432,7 +440,6 @@ interface DataContextType {
     generateTurnoverRisk: (storeData: StoreData[], comments: Comment[]) => void;
     generateSuccess: (storeData: StoreData[], comments: Comment[]) => void;
     generateAnomalies: (storeData: StoreData[], comments: Comment[]) => void;
-    resetAIAnalyses: () => void;
     getStoreById: (storeId: string) => StoreData | undefined;
     getCommentsForStore: (storeName: string) => Comment[];
 }
@@ -475,11 +482,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [currentUser, setCurrentUser] = useState<User | null>(null);
 
     const initialAIState: AIAnalysisState = {
-        summary: { result: null, loading: false, error: null },
-        focus: { result: null, loading: false, error: null },
-        turnover: { result: null, loading: false, error: null },
-        success: { result: null, loading: false, error: null },
-        anomalies: { result: null, loading: false, error: null },
+        summary: { result: null, loading: false, error: null, fingerprint: null },
+        focus: { result: null, loading: false, error: null, fingerprint: null },
+        turnover: { result: null, loading: false, error: null, fingerprint: null },
+        success: { result: null, loading: false, error: null, fingerprint: null },
+        anomalies: { result: null, loading: false, error: null, fingerprint: null },
     };
     const [aiAnalyses, setAiAnalyses] = useState<AIAnalysisState>(initialAIState);
 
@@ -830,10 +837,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return managersForSom ? Array.from(managersForSom) : [];
     }, [somToManagersMap]);
 
-    const resetAIAnalyses = useCallback(() => {
-        setAiAnalyses(initialAIState);
-    }, []);
-
     const getStoreById = useCallback((storeId: string): StoreData | undefined => {
         return storesById.get(storeId);
     }, [storesById]);
@@ -845,16 +848,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const generateSummary = useCallback(async (storeData: StoreData[], comments: Comment[]) => {
         if (!process.env.API_KEY) {
             const error = "API anahtarı yapılandırılmadığı için içgörü oluşturulamadı.";
-            setAiAnalyses(prev => ({ ...prev, summary: { result: error, loading: false, error } }));
+            setAiAnalyses(prev => ({ ...prev, summary: { ...prev.summary, result: error, loading: false, error } }));
             return;
         }
         if (storeData.length < 3) {
             const result = "Genel bir analiz oluşturmak için yeterli sayıda (en az 3) mağaza verisi bulunmuyor.";
-            setAiAnalyses(prev => ({ ...prev, summary: { result: result, loading: false, error: null } }));
+            setAiAnalyses(prev => ({ ...prev, summary: { ...prev.summary, result: result, loading: false, error: null } }));
             return;
         }
 
-        setAiAnalyses(prev => ({ ...prev, summary: { ...prev.summary, loading: true, error: null, result: '' } }));
+        const fingerprint = createAnalysisFingerprint(storeData, comments);
+        setAiAnalyses(prev => ({ ...prev, summary: { result: null, loading: true, error: null, fingerprint } }));
         
         try {
             const sortedStores = [...storeData].sort((a, b) => b.satisfaction - a.satisfaction);
@@ -891,26 +895,38 @@ Cevabını, her biri '*' ile başlayan 3 maddelik bir liste olarak, başka hiçb
                 contents: prompt,
             });
             const text = response.text;
-            setAiAnalyses(prev => ({ ...prev, summary: { result: text, loading: false, error: null } }));
+
+            setAiAnalyses(prev => {
+                if (prev.summary.fingerprint === fingerprint) {
+                    return { ...prev, summary: { ...prev.summary, result: text, loading: false } };
+                }
+                return prev;
+            });
         } catch (error: any) {
             const errorMessage = getApiErrorMessage(error);
-            setAiAnalyses(prev => ({ ...prev, summary: { result: errorMessage, loading: false, error: errorMessage } }));
+            setAiAnalyses(prev => {
+                if (prev.summary.fingerprint === fingerprint) {
+                    return { ...prev, summary: { ...prev.summary, result: errorMessage, loading: false, error: errorMessage } };
+                }
+                return prev;
+            });
         }
     }, []);
 
     const generateFocus = useCallback(async (storeData: StoreData[], comments: Comment[]) => {
         if (!process.env.API_KEY) {
             const error = "API anahtarı yapılandırılmadı.";
-            setAiAnalyses(prev => ({ ...prev, focus: { result: null, loading: false, error } }));
+            setAiAnalyses(prev => ({ ...prev, focus: { result: null, loading: false, error, fingerprint: null } }));
             return;
         }
         if (comments.length === 0) {
             const error = "Analiz edilecek yorum verisi bulunmamaktadır.";
-            setAiAnalyses(prev => ({ ...prev, focus: { result: null, loading: false, error } }));
+            setAiAnalyses(prev => ({ ...prev, focus: { result: null, loading: false, error, fingerprint: 'no-data' } }));
             return;
         }
 
-        setAiAnalyses(prev => ({ ...prev, focus: { ...prev.focus, loading: true, error: null, result: null } }));
+        const fingerprint = createAnalysisFingerprint(storeData, comments);
+        setAiAnalyses(prev => ({ ...prev, focus: { result: null, loading: true, error: null, fingerprint } }));
         
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -964,26 +980,37 @@ Cevabını, her biri '*' ile başlayan 3 maddelik bir liste olarak, başka hiçb
 
             const jsonStr = response.text.trim();
             const parsedAnalysis = JSON.parse(jsonStr);
-            setAiAnalyses(prev => ({ ...prev, focus: { result: parsedAnalysis, loading: false, error: null } }));
+            setAiAnalyses(prev => {
+                if (prev.focus.fingerprint === fingerprint) {
+                    return { ...prev, focus: { ...prev.focus, result: parsedAnalysis, loading: false } };
+                }
+                return prev;
+            });
         } catch (err: any) {
             const errorMessage = getApiErrorMessage(err);
-            setAiAnalyses(prev => ({ ...prev, focus: { result: null, loading: false, error: errorMessage } }));
+            setAiAnalyses(prev => {
+                if (prev.focus.fingerprint === fingerprint) {
+                    return { ...prev, focus: { ...prev.focus, result: null, loading: false, error: errorMessage } };
+                }
+                return prev;
+            });
         }
     }, []);
 
     const generateTurnoverRisk = useCallback(async (storeData: StoreData[], comments: Comment[]) => {
         if (!process.env.API_KEY) {
             const error = "API anahtarı yapılandırılmadı.";
-            setAiAnalyses(prev => ({ ...prev, turnover: { result: null, loading: false, error } }));
+            setAiAnalyses(prev => ({ ...prev, turnover: { result: null, loading: false, error, fingerprint: null } }));
             return;
         }
         if (comments.length < 10) {
             const error = "Turnover risk analizi için yeterli yorum verisi (en az 10) bulunmamaktadır.";
-            setAiAnalyses(prev => ({ ...prev, turnover: { result: null, loading: false, error } }));
+            setAiAnalyses(prev => ({ ...prev, turnover: { result: null, loading: false, error, fingerprint: 'no-data' } }));
             return;
         }
 
-        setAiAnalyses(prev => ({ ...prev, turnover: { ...prev.turnover, loading: true, error: null, result: null } }));
+        const fingerprint = createAnalysisFingerprint(storeData, comments);
+        setAiAnalyses(prev => ({ ...prev, turnover: { result: null, loading: true, error: null, fingerprint } }));
 
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -1041,34 +1068,45 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
 
             const jsonStr = response.text.trim();
             const parsedAnalysis = JSON.parse(jsonStr);
-            setAiAnalyses(prev => ({ ...prev, turnover: { result: parsedAnalysis, loading: false, error: null } }));
+            setAiAnalyses(prev => {
+                if (prev.turnover.fingerprint === fingerprint) {
+                    return { ...prev, turnover: { ...prev.turnover, result: parsedAnalysis, loading: false } };
+                }
+                return prev;
+            });
         } catch (err: any) {
             const errorMessage = getApiErrorMessage(err);
-            setAiAnalyses(prev => ({ ...prev, turnover: { result: null, loading: false, error: errorMessage } }));
+            setAiAnalyses(prev => {
+                if (prev.turnover.fingerprint === fingerprint) {
+                    return { ...prev, turnover: { ...prev.turnover, result: null, loading: false, error: errorMessage } };
+                }
+                return prev;
+            });
         }
     }, []);
     
     const generateSuccess = useCallback(async (storeData: StoreData[], comments: Comment[]) => {
         if (!process.env.API_KEY) {
             const error = "API anahtarı yapılandırılmadı.";
-            setAiAnalyses(prev => ({ ...prev, success: { result: null, loading: false, error } }));
+            setAiAnalyses(prev => ({ ...prev, success: { result: null, loading: false, error, fingerprint: null } }));
             return;
         }
         const topStores = [...storeData].sort((a, b) => b.satisfaction - a.satisfaction).slice(0, 3);
         if (topStores.length < 3) {
             const error = "Başarı analizi için yeterli sayıda (en az 3) yüksek performanslı mağaza verisi bulunmamaktadır.";
-            setAiAnalyses(prev => ({ ...prev, success: { result: null, loading: false, error } }));
+            setAiAnalyses(prev => ({ ...prev, success: { result: null, loading: false, error, fingerprint: 'no-data' } }));
             return;
         }
 
-        setAiAnalyses(prev => ({ ...prev, success: { ...prev.success, loading: true, error: null, result: null } }));
+        const fingerprint = createAnalysisFingerprint(storeData, comments);
+        setAiAnalyses(prev => ({ ...prev, success: { result: null, loading: true, error: null, fingerprint } }));
 
         try {
             const topStoreNames = new Set(topStores.map(s => s.name));
             const positiveCommentsFromTopStores = comments.filter(c => c.sentiment === 'positive' && topStoreNames.has(c.store)).map(c => ({ store: c.store, text: c.text.substring(0, 200) }));
             if (positiveCommentsFromTopStores.length < 5) {
                 const error = "Başarı analizi için yeterli sayıda (en az 5) olumlu yorum bulunmamaktadır.";
-                setAiAnalyses(prev => ({ ...prev, success: { result: null, loading: false, error } }));
+                setAiAnalyses(prev => ({ ...prev, success: { result: null, loading: false, error, fingerprint } }));
                 return;
             }
 
@@ -1118,27 +1156,38 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
 
             const jsonStr = response.text.trim();
             const parsedAnalysis = JSON.parse(jsonStr);
-            setAiAnalyses(prev => ({ ...prev, success: { result: parsedAnalysis, loading: false, error: null } }));
+            setAiAnalyses(prev => {
+                if (prev.success.fingerprint === fingerprint) {
+                    return { ...prev, success: { ...prev.success, result: parsedAnalysis, loading: false } };
+                }
+                return prev;
+            });
 
         } catch (err: any) {
             const errorMessage = getApiErrorMessage(err);
-            setAiAnalyses(prev => ({ ...prev, success: { result: null, loading: false, error: errorMessage } }));
+            setAiAnalyses(prev => {
+                if (prev.success.fingerprint === fingerprint) {
+                    return { ...prev, success: { ...prev.success, result: null, loading: false, error: errorMessage } };
+                }
+                return prev;
+            });
         }
     }, []);
 
     const generateAnomalies = useCallback(async (storeData: StoreData[], comments: Comment[]) => {
         if (!process.env.API_KEY) {
             const error = "API anahtarı yapılandırılmadı.";
-            setAiAnalyses(prev => ({ ...prev, anomalies: { result: null, loading: false, error } }));
+            setAiAnalyses(prev => ({ ...prev, anomalies: { result: null, loading: false, error, fingerprint: null } }));
             return;
         }
         if (comments.length < 20) {
             const error = "Anomali tespiti için yeterli sayıda (en az 20) yorum bulunmamaktadır.";
-            setAiAnalyses(prev => ({ ...prev, anomalies: { result: null, loading: false, error } }));
+            setAiAnalyses(prev => ({ ...prev, anomalies: { result: null, loading: false, error, fingerprint: 'no-data' } }));
             return;
         }
     
-        setAiAnalyses(prev => ({ ...prev, anomalies: { ...prev.anomalies, loading: true, error: null, result: null } }));
+        const fingerprint = createAnalysisFingerprint(storeData, comments);
+        setAiAnalyses(prev => ({ ...prev, anomalies: { result: null, loading: true, error: null, fingerprint } }));
     
         try {
             const commentsForAnalysis = comments.map(c => ({ store: c.store, text: c.text, sentiment: c.sentiment, date: c.date, week: c.week }));
@@ -1197,11 +1246,21 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
             
             const jsonStr = response.text.trim();
             const parsedAnalysis = JSON.parse(jsonStr);
-            setAiAnalyses(prev => ({ ...prev, anomalies: { result: parsedAnalysis, loading: false, error: null } }));
+            setAiAnalyses(prev => {
+                if (prev.anomalies.fingerprint === fingerprint) {
+                    return { ...prev, anomalies: { ...prev.anomalies, result: parsedAnalysis, loading: false } };
+                }
+                return prev;
+            });
     
         } catch (err: any) {
             const errorMessage = getApiErrorMessage(err);
-            setAiAnalyses(prev => ({ ...prev, anomalies: { result: null, loading: false, error: errorMessage } }));
+            setAiAnalyses(prev => {
+                if (prev.anomalies.fingerprint === fingerprint) {
+                    return { ...prev, anomalies: { ...prev.anomalies, result: null, loading: false, error: errorMessage } };
+                }
+                return prev;
+            });
         }
     }, []);
 
@@ -1447,7 +1506,7 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
 
         } catch (err: unknown) {
             console.error("Upload processing failed:", err);
-            // FIX: The 'err' object in a catch block is of type 'unknown'. We must first verify it is an Error instance before accessing 'err.message' to avoid a type error.
+            // FIX: The 'err' object in a catch block is of type 'unknown' and cannot be directly used as a string. It is converted to a string before being passed to setError and new Error.
             const message = err instanceof Error ? err.message : String(err);
             setError(message);
             throw new Error(message);
@@ -1546,7 +1605,7 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
 
         } catch (err: unknown) {
             console.error("Turnover upload failed:", err);
-            // FIX: The 'err' object in a catch block is of type 'unknown'. We must first verify it is an Error instance before accessing 'err.message' to avoid a type error.
+            // FIX: The 'err' object in a catch block is of type 'unknown' and cannot be directly used as a string. It is converted to a string before being passed to setError and new Error.
             const message = err instanceof Error ? err.message : String(err);
             setError(message);
             throw new Error(message);
@@ -1722,7 +1781,6 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
         generateTurnoverRisk,
         generateSuccess,
         generateAnomalies,
-        resetAIAnalyses,
         getStoreById,
         getCommentsForStore,
     };

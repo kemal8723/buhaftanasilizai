@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { StoreData, Comment } from '../types';
+import React, { useState, useMemo } from 'react';
+import { StoreData, Comment, AIAnalysisResponse, TurnoverRiskAnalysis, SuccessAnalysisResponse, AnomalyDetectionResponse } from '../types';
 import { Link } from 'react-router-dom';
 import { useData } from '../DataContext';
 
@@ -9,6 +9,14 @@ interface AIInsightsCardProps {
     storeData: StoreData[];
     comments: Comment[];
 }
+
+const createAnalysisFingerprint = (storeData: StoreData[], comments: Comment[]): string => {
+    if (!storeData || storeData.length === 0) return 'no-data';
+    const storeIds = storeData.map(s => s.id).sort().join(',');
+    const commentCount = comments.length;
+    return `${storeData.length}-${commentCount}-${storeIds}`;
+};
+
 
 const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary', storeData, comments }) => {
     const [activeTab, setActiveTab] = useState<'summary' | 'focus' | 'turnover' | 'success' | 'anomalies'>(defaultTab);
@@ -20,16 +28,9 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
         generateTurnoverRisk,
         generateSuccess,
         generateAnomalies,
-        resetAIAnalyses 
     } = useData();
 
-    useEffect(() => {
-        // When data filters change on the dashboard, this effect will trigger,
-        // calling the context function to reset all analyses.
-        // This ensures that stale analysis results are not displayed.
-        resetAIAnalyses();
-    }, [storeData, comments, resetAIAnalyses]);
-
+    const currentFingerprint = useMemo(() => createAnalysisFingerprint(storeData, comments), [storeData, comments]);
 
     const renderLoadingState = () => (
         <div className="loading-placeholder">
@@ -39,8 +40,8 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
         </div>
     );
     
-    const renderSummaryContent = () => {
-        const summaryInsight = aiAnalyses.summary.result || '';
+    const renderSummaryContent = (summaryInsight: string | null) => {
+        if (!summaryInsight) return renderSummaryInitialState();
         const insightItems = summaryInsight.split('\n').filter(line => line.trim().length > 0 && (line.includes('*') || line.includes('-') || /^\d+\./.test(line.trim())));
         
         const formatText = (text: string) => {
@@ -85,9 +86,8 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
         return 'var(--primary-color)';
     };
 
-    const renderFocusContent = () => {
-        const focusAnalysis = aiAnalyses.focus.result;
-        if (!focusAnalysis) return null;
+    const renderFocusContent = (focusAnalysis: AIAnalysisResponse | null) => {
+        if (!focusAnalysis) return renderFocusInitialState();
         return (
             <div className="ai-content-container">
                 <p className="ai-summary">{focusAnalysis.summary}</p>
@@ -132,9 +132,8 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
         </div>
     );
     
-    const renderTurnoverRiskContent = () => {
-        const turnoverAnalysis = aiAnalyses.turnover.result;
-        if (!turnoverAnalysis) return null;
+    const renderTurnoverRiskContent = (turnoverAnalysis: TurnoverRiskAnalysis | null) => {
+        if (!turnoverAnalysis) return renderTurnoverRiskInitialState();
         return (
             <div className="ai-content-container">
                 <p className="ai-summary">{turnoverAnalysis.summary}</p>
@@ -171,9 +170,8 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
         </div>
     );
 
-    const renderSuccessContent = () => {
-        const successAnalysis = aiAnalyses.success.result;
-        if (!successAnalysis) return null;
+    const renderSuccessContent = (successAnalysis: SuccessAnalysisResponse | null) => {
+        if (!successAnalysis) return renderSuccessInitialState();
         return (
             <div className="ai-content-container">
                 <p className="ai-summary">{successAnalysis.summary}</p>
@@ -205,9 +203,8 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
        </div>
    );
 
-    const renderAnomaliesContent = () => {
-        const anomalyAnalysis = aiAnalyses.anomalies.result;
-        if (!anomalyAnalysis) return null;
+    const renderAnomaliesContent = (anomalyAnalysis: AnomalyDetectionResponse | null) => {
+        if (!anomalyAnalysis) return renderAnomaliesInitialState();
         return (
             <div className="ai-content-container">
                 <p className="ai-summary">{anomalyAnalysis.summary}</p>
@@ -242,10 +239,39 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
         </div>
     );
     
-    const isLoading = aiAnalyses[activeTab].loading;
-    const currentData = aiAnalyses[activeTab].result;
-    const error = aiAnalyses[activeTab].error;
-    
+    const analysisState = aiAnalyses[activeTab];
+    const isDataStale = analysisState.fingerprint !== currentFingerprint;
+    const isLoading = analysisState.loading && !isDataStale;
+    const currentData = analysisState.result;
+    const error = analysisState.error;
+
+    const renderCurrentTab = () => {
+        if (isLoading) {
+            return renderLoadingState();
+        }
+
+        if (isDataStale || !currentData) {
+            switch (activeTab) {
+                case 'summary': return renderSummaryInitialState();
+                case 'focus': return renderFocusInitialState();
+                case 'turnover': return renderTurnoverRiskInitialState();
+                case 'success': return renderSuccessInitialState();
+                case 'anomalies': return renderAnomaliesInitialState();
+                default: return null;
+            }
+        }
+        
+        // Data is not stale and we have a result
+        switch (activeTab) {
+            case 'summary': return renderSummaryContent(currentData as string | null);
+            case 'focus': return renderFocusContent(currentData as AIAnalysisResponse | null);
+            case 'turnover': return renderTurnoverRiskContent(currentData as TurnoverRiskAnalysis | null);
+            case 'success': return renderSuccessContent(currentData as SuccessAnalysisResponse | null);
+            case 'anomalies': return renderAnomaliesContent(currentData as AnomalyDetectionResponse | null);
+            default: return null;
+        }
+    };
+
     let handleRefresh;
     if (activeTab === 'summary') {
         handleRefresh = () => generateSummary(storeData, comments);
@@ -276,7 +302,7 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
                         <button className={`ai-tab-btn ${activeTab === 'turnover' ? 'active' : ''}`} onClick={() => setActiveTab('turnover')}>Turnover Riski</button>
                         <button className={`ai-tab-btn ${activeTab === 'anomalies' ? 'active' : ''}`} onClick={() => setActiveTab('anomalies')}>Uyarılar</button>
                     </div>
-                    {currentData && !isLoading && (
+                    {currentData && !isLoading && !isDataStale && (
                         <button onClick={handleRefresh} className="btn-link" style={{ flexShrink: 0 }}>
                             <span className="material-symbols-outlined">refresh</span>
                             <span className="hide-on-mobile">Yenile</span>
@@ -284,13 +310,9 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
                     )}
                 </div>
             </div>
-            {error && <p className="error-message" style={{ margin: '1rem', border: '1px solid var(--error-color)', background: '#FEF2F2', padding: '0.75rem', borderRadius: 'var(--border-radius)' }}>{error}</p>}
+            {error && !isDataStale && <p className="error-message" style={{ margin: '1rem', border: '1px solid var(--error-color)', background: '#FEF2F2', padding: '0.75rem', borderRadius: 'var(--border-radius)' }}>{error}</p>}
             
-            {activeTab === 'summary' && (isLoading ? renderLoadingState() : (currentData ? renderSummaryContent() : renderSummaryInitialState()))}
-            {activeTab === 'focus' && (isLoading ? renderLoadingState() : (currentData ? renderFocusContent() : renderFocusInitialState()))}
-            {activeTab === 'success' && (isLoading ? renderLoadingState() : (currentData ? renderSuccessContent() : renderSuccessInitialState()))}
-            {activeTab === 'turnover' && (isLoading ? renderLoadingState() : (currentData ? renderTurnoverRiskContent() : renderTurnoverRiskInitialState()))}
-            {activeTab === 'anomalies' && (isLoading ? renderLoadingState() : (currentData ? renderAnomaliesContent() : renderAnomaliesInitialState()))}
+            {renderCurrentTab()}
         </div>
     );
 };
