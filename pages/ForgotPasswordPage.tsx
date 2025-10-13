@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import AuthLayout from '../components/AuthLayout';
 import { useData } from '../DataContext';
+import LogoImage from '../components/LogoImage';
 
 type Step = 'email' | 'confirmation' | 'reset' | 'success';
 
@@ -209,6 +210,7 @@ const ForgotPasswordPage: React.FC = () => {
     return (
         <AuthLayout>
             <div className="auth-container">
+                <LogoImage className="auth-logo" />
                 {renderStep()}
             </div>
         </AuthLayout>

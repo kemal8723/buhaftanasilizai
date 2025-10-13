@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import AuthLayout from '../components/AuthLayout';
 import { useData } from '../DataContext';
+import LogoImage from '../components/LogoImage';
 
 const LoginPage: React.FC = () => {
     const [email, setEmail] = useState('');
@@ -24,6 +25,7 @@ const LoginPage: React.FC = () => {
     return (
         <AuthLayout>
             <div className="auth-container">
+                <LogoImage className="auth-logo" />
                 <h2 className="auth-title">Tekrar Hoş Geldiniz</h2>
                 <p className="auth-subtitle">Hesap bilgilerinizle giriş yapın ve verileri yönetmeye başlayın.</p>
                 <form onSubmit={handleLogin} className="auth-form">

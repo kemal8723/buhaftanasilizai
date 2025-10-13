@@ -3,8 +3,8 @@ import React from 'react';
 const LogoImage: React.FC<{ className?: string }> = ({ className }) => {
   return (
     <img
-      src="assets/logo.png"
-      alt="logo.png"
+      src="https://i.imgur.com/Wwj0ndy.png"
+      alt="Watsons Logo"
       className={className}
     />
   );

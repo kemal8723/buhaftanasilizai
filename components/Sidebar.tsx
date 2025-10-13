@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import LogoImage from './LogoImage';
 import { useData } from '../DataContext';
+import LogoImage from './LogoImage';
 
 interface SidebarProps {
     isOpen: boolean;

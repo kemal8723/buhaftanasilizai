@@ -1552,8 +1552,7 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
 
         } catch (err: unknown) {
             console.error("Upload processing failed:", err);
-            // FIX: The 'err' object in a catch block is of type 'unknown' and cannot be directly used as a string. It is converted to a string before being passed to setError and new Error.
-            // FIX: Convert 'unknown' error to string before passing to error handlers.
+            // FIX: The 'err' object from a catch block is of type 'unknown' and cannot be directly passed to functions expecting a string (like setError or new Error). It must be converted to a string first.
             const message = err instanceof Error ? err.message : String(err);
             setError(message);
             throw new Error(message);
@@ -1652,8 +1651,7 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
 
         } catch (err: unknown) {
             console.error("Turnover upload failed:", err);
-            // FIX: The 'err' object in a catch block is of type 'unknown' and cannot be directly used as a string. It is converted to a string before being passed to setError and new Error.
-            // FIX: Convert unknown error to string. `err` is of type `unknown` and cannot be passed directly to `setError` or `new Error`.
+            // FIX: The 'err' object from a catch block is of type 'unknown' and cannot be directly passed to functions expecting a string (like setError or new Error). It must be converted to a string first.
             const message = err instanceof Error ? err.message : String(err);
             setError(message);
             throw new Error(message);

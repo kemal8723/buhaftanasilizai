@@ -1,15 +1,16 @@
 
+
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import MainLayout from '../components/MainLayout';
 import { useData } from '../DataContext';
 import { StoreData, ChartData, Comment } from '../types';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import LogoImage from '../components/LogoImage';
 import { HorizontalBarChartCard } from '../components/ChartCards';
 import SatisfactionDistributionCard from '../components/SatisfactionDistributionCard';
 // FIX: Updated deprecated GoogleGenerativeAI to GoogleGenAI.
 import { GoogleGenAI } from "@google/genai";
+import LogoImage from '../components/LogoImage';
 
 
 interface ReportData {

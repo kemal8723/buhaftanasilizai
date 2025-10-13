@@ -41,7 +41,7 @@ const AIChatAssistant: React.FC = () => {
     const [messages, setMessages] = useState<ChatMessage[]>([
         {
             role: 'model',
-            content: 'Merhaba! Ben Analiz Asistanı. Verilerinizle ilgili neyi merak ediyorsunuz?'
+            content: 'Merhaba! Ben Gen AI Analiz Asistanı. Verilerinizle ilgili neyi merak ediyorsunuz?'
         }
     ]);
     const [userInput, setUserInput] = useState('');
@@ -83,7 +83,7 @@ const AIChatAssistant: React.FC = () => {
 
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             
-            const prompt = `Sen, "Analiz Asistanı" adlı, bir İK veri analizi konusunda uzman bir yapay zekasın. Görevin, sana sunulan mağaza, çalışan yorumu ve turnover verilerini analiz ederek kullanıcının sorularını Türkçe olarak yanıtlamaktır.
+            const prompt = `Sen, "GEN AI Analiz Asistanı" adlı, bir İK veri analizi konusunda uzman bir yapay zekasın. Görevin, sana sunulan mağaza, çalışan yorumu ve turnover verilerini analiz ederek kullanıcının sorularını Türkçe olarak yanıtlamaktır.
 
 **Yeteneklerin:**
 - Mağaza performanslarını karşılaştırabilirsin (örn: "En düşük memnuniyete sahip 3 mağaza hangisi?").
@@ -138,7 +138,7 @@ ${messages.map(m => `${m.role === 'user' ? 'Kullanıcı' : 'Asistan'}: ${m.conte
                 <div className="ai-chat-header">
                     <div className="ai-chat-title-group">
                         <span className="material-symbols-outlined ai-icon">auto_awesome</span>
-                        <h3 className="ai-chat-title">Analiz Asistanı</h3>
+                        <h3 className="ai-chat-title">GEN AI Analiz Asistanı</h3>
                     </div>
                     <button className="ai-chat-close-btn" onClick={() => setIsOpen(false)} aria-label="Kapat">
                          <span className="material-symbols-outlined">close</span>
@@ -175,8 +175,8 @@ ${messages.map(m => `${m.role === 'user' ? 'Kullanıcı' : 'Asistan'}: ${m.conte
                     </form>
                 </div>
             </div>
-            <button className="ai-chat-fab" onClick={() => setIsOpen(!isOpen)} aria-label={isOpen ? "Asistanı Kapat" : "Asistanı Aç"}>
-                <span className="material-symbols-outlined">{isOpen ? 'close' : 'auto_awesome'}</span>
+            <button className={`ai-chat-fab ${isOpen ? 'open' : ''}`} onClick={() => setIsOpen(!isOpen)} aria-label={isOpen ? "Asistanı Kapat" : "Asistanı Aç"}>
+                <span className="material-symbols-outlined">close</span>
             </button>
         </div>
     );
