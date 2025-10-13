@@ -65,7 +65,7 @@ const LoginPage: React.FC = () => {
                         </div>
                     </div>
                     <div className="form-options">
-                         <span className="pseudo-link forgot-password-link" title="Şifre sıfırlama özelliği yakında eklenecektir.">Şifremi Unuttum?</span>
+                         <Link to="/forgot-password" className="pseudo-link forgot-password-link">Şifremi Unuttum?</Link>
                     </div>
                     <div>
                         <button type="submit" className="btn btn-submit btn-gradient">

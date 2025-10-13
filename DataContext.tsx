@@ -422,6 +422,8 @@ interface DataContextType {
     login: (email: string, pass: string) => boolean;
     logout: () => void;
     signUp: (details: Omit<User, 'id' | 'role' | 'status'>) => Promise<void>;
+    requestPasswordReset: (email: string) => { success: boolean; token?: string };
+    resetPassword: (token: string, newPass: string) => boolean;
     uploadData: (data: any[][], file: File) => Promise<void>;
     uploadTurnoverData: (data: any[][], file: File) => Promise<void>;
     deleteFeedbackFile: (fileId: string) => void;
@@ -480,6 +482,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [userProfileImages, setUserProfileImages] = useState<Record<string, string>>({});
     const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [passwordResetTokens, setPasswordResetTokens] = useState<Map<string, { email: string, expires: number }>>(new Map());
+
 
     const initialAIState: AIAnalysisState = {
         summary: { result: null, loading: false, error: null, fingerprint: null },
@@ -712,6 +716,48 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sessionStorage.removeItem('isAuthenticated');
         sessionStorage.removeItem('currentUser');
     }, []);
+
+    const requestPasswordReset = useCallback((email: string): { success: boolean; token?: string } => {
+        const userExists = allUsers.some(u => u.email.toLowerCase() === email.toLowerCase());
+        if (!userExists) {
+            // To prevent user enumeration, we act like it succeeded.
+            // The user will just never get an email.
+            return { success: true };
+        }
+        const token = `reset-${Date.now()}-${Math.random()}`;
+        const expires = Date.now() + 15 * 60 * 1000; // 15 minutes
+        
+        const newTokens = new Map(passwordResetTokens);
+        newTokens.set(token, { email, expires });
+        setPasswordResetTokens(newTokens);
+        
+        console.log(`Password reset token for ${email}: ${token}`); // For simulation
+        return { success: true, token };
+    }, [allUsers, passwordResetTokens]);
+
+    const resetPassword = useCallback((token: string, newPass: string): boolean => {
+        const tokenData = passwordResetTokens.get(token);
+        if (!tokenData || tokenData.expires < Date.now()) {
+            return false; // Token not found or expired
+        }
+        
+        const userIndex = allUsers.findIndex(u => u.email.toLowerCase() === tokenData.email.toLowerCase());
+        if (userIndex === -1) {
+            return false;
+        }
+        
+        const updatedUsers = [...allUsers];
+        updatedUsers[userIndex] = { ...updatedUsers[userIndex], password: newPass };
+        setAllUsers(updatedUsers);
+        localStorage.setItem('users', JSON.stringify(updatedUsers));
+
+        const newTokens = new Map(passwordResetTokens);
+        newTokens.delete(token);
+        setPasswordResetTokens(newTokens);
+        
+        return true;
+    }, [allUsers, passwordResetTokens]);
+
     
     const addCommentAction = useCallback((commentId: string, actionText: string) => {
         const updatedComments = allComments.map(comment => {
@@ -1507,6 +1553,7 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
         } catch (err: unknown) {
             console.error("Upload processing failed:", err);
             // FIX: The 'err' object in a catch block is of type 'unknown' and cannot be directly used as a string. It is converted to a string before being passed to setError and new Error.
+            // FIX: Convert 'unknown' error to string before passing to error handlers.
             const message = err instanceof Error ? err.message : String(err);
             setError(message);
             throw new Error(message);
@@ -1606,6 +1653,7 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
         } catch (err: unknown) {
             console.error("Turnover upload failed:", err);
             // FIX: The 'err' object in a catch block is of type 'unknown' and cannot be directly used as a string. It is converted to a string before being passed to setError and new Error.
+            // FIX: Convert unknown error to string. `err` is of type `unknown` and cannot be passed directly to `setError` or `new Error`.
             const message = err instanceof Error ? err.message : String(err);
             setError(message);
             throw new Error(message);
@@ -1765,6 +1813,8 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
         login,
         signUp,
         logout,
+        requestPasswordReset,
+        resetPassword,
         uploadData,
         uploadTurnoverData,
         deleteFeedbackFile,

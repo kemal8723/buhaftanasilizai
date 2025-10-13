@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
@@ -11,6 +10,7 @@ import SettingsPage from './pages/SettingsPage';
 import StoreDetailPage from './pages/StoreDetailPage';
 import StoresListPage from './pages/StoresListPage';
 import RegionAnalysisPage from './pages/RegionAnalysisPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import { DataProvider, useData } from './DataContext';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -27,6 +27,7 @@ const AppRoutes: React.FC = () => {
         <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignUpPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
             <Route path="/upload" element={<ProtectedRoute><UploadPage /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
