@@ -188,7 +188,7 @@ const StoresListPage: React.FC = () => {
                 <div className="page-header">
                     <div>
                         <p className="page-title">Mağaza Listesi</p>
-                        <p className="page-subtitle">Tüm mağazaların performansını görüntüleyin, filtreleyin ve karşılaştırın.</p>
+                        <p className="page-subtitle">Tüm mağazaların memnuniyet verilerini görüntüleyin, filtreleyin ve karşılaştırın.</p>
                     </div>
                 </div>
 

@@ -1,7 +1,8 @@
+
 import React, { useState, useMemo } from 'react';
 import MainLayout from '../components/MainLayout';
 import { useData } from '../DataContext';
-import { Comment, StoreData } from '../types';
+import { Comment, StoreData, User } from '../types';
 import * as XLSX from 'xlsx';
 import SatisfactionDistributionCard from '../components/SatisfactionDistributionCard';
 
@@ -99,10 +100,12 @@ const RegionAnalysisPage: React.FC = () => {
         getSomForStore, 
         soms, 
         managers, 
-        weekFilterOptions 
+        weekFilterOptions,
+        allUsers,
     } = useData();
     
     const [selectedWeek, setSelectedWeek] = useState('all');
+    const [exportType, setExportType] = useState('unresolved'); // 'unresolved', 'resolved', 'all'
 
     const isAuthorized = currentUser && !['Bölge Müdürü', 'Satış Operasyon Müdürü'].includes(currentUser.role);
 
@@ -211,32 +214,119 @@ const RegionAnalysisPage: React.FC = () => {
     }, [managers, storeData, getManagerForStore]);
     
     const handleExportToExcel = () => {
-        const unresolvedComments = comments.filter(c => 
-            c.sentiment === 'negative' && 
-            (!c.actions || c.actions.length === 0) &&
-            (selectedWeek === 'all' || c.week === selectedWeek)
-        );
+        const userNameToTitleMap = new Map<string, string>();
+        allUsers.forEach(user => {
+            userNameToTitleMap.set(user.name, user.title);
+        });
 
-        if (unresolvedComments.length === 0) {
-            alert("Seçilen filtrelere uygun aksiyon bekleyen yorum bulunamadı.");
+        let filteredComments = comments.filter(c => selectedWeek === 'all' || c.week === selectedWeek);
+
+        if (exportType === 'unresolved') {
+            filteredComments = filteredComments.filter(c => c.sentiment === 'negative' && (!c.actions || c.actions.length === 0));
+        } else if (exportType === 'resolved') {
+            filteredComments = filteredComments.filter(c => c.actions && c.actions.length > 0);
+        }
+
+        if (filteredComments.length === 0) {
+            alert("Seçilen filtrelere uygun yorum bulunamadı.");
             return;
         }
 
-        const dataForExcel = unresolvedComments.map(comment => ({
-            'Hafta': comment.week || getWeekOfYear(comment.date),
-            'Mağaza': comment.store,
-            'SOM': getSomForStore(comment.store) || 'N/A',
-            'Bölge Müdürü': getManagerForStore(comment.store) || 'N/A',
-            'Yorum': comment.text,
-            'Kategori': comment.category,
-            'Tarih': new Date(comment.date).toLocaleDateString('tr-TR'),
-        }));
+        // Sheet 1: Detailed Comments
+        const actionTitles = new Set<string>();
+        filteredComments.forEach(comment => {
+            if (comment.actions) {
+                comment.actions.forEach(action => {
+                    const title = userNameToTitleMap.get(action.author);
+                    if (title) actionTitles.add(title);
+                });
+            }
+        });
+        const sortedActionTitles = Array.from(actionTitles).sort();
 
-        const worksheet = XLSX.utils.json_to_sheet(dataForExcel);
+        const dataForExcel = filteredComments.map(comment => {
+            const row: { [key: string]: any } = {
+                'Hafta': comment.week || getWeekOfYear(comment.date),
+                'Mağaza': comment.store,
+                'SOM': getSomForStore(comment.store) || 'N/A',
+                'Bölge Müdürü': getManagerForStore(comment.store) || 'N/A',
+                'Yorum': comment.text,
+                'Duygu': comment.sentiment,
+                'Kategori': comment.category,
+                'Tarih': new Date(comment.date).toLocaleDateString('tr-TR'),
+                'Aksiyon Durumu': (comment.actions && comment.actions.length > 0) ? 'Aksiyon Alındı' : 'Bekliyor',
+            };
+            sortedActionTitles.forEach(title => { row[title] = ''; });
+
+            if (comment.actions) {
+                comment.actions.forEach(action => {
+                    const title = userNameToTitleMap.get(action.author);
+                    if (title && sortedActionTitles.includes(title)) {
+                        const actionDetails = `${action.text} (${new Date(action.timestamp).toLocaleDateString('tr-TR')})`;
+                        row[title] = row[title] ? `${row[title]}\n${actionDetails}` : actionDetails;
+                    }
+                });
+            }
+            return row;
+        });
+        const worksheet1 = XLSX.utils.json_to_sheet(dataForExcel);
+
+        // Sheet 2: Summary Report
+        const totalComments = filteredComments.length;
+        const resolvedCount = filteredComments.filter(c => c.actions && c.actions.length > 0).length;
+        const unresolvedCount = totalComments - resolvedCount;
+        const resolutionRate = totalComments > 0 ? ((resolvedCount / totalComments) * 100).toFixed(1) + '%' : 'N/A';
+
+        const categoryStats: { [key: string]: { resolved: number, unresolved: number } } = {};
+        filteredComments.forEach(c => {
+            if (!categoryStats[c.category]) categoryStats[c.category] = { resolved: 0, unresolved: 0 };
+            if (c.actions && c.actions.length > 0) categoryStats[c.category].resolved++;
+            else categoryStats[c.category].unresolved++;
+        });
+
+        const bmStats: { [key: string]: { resolved: number, unresolved: number } } = {};
+        filteredComments.forEach(c => {
+            const manager = getManagerForStore(c.store) || 'Atanmamış';
+            if (!bmStats[manager]) bmStats[manager] = { resolved: 0, unresolved: 0 };
+            if (c.actions && c.actions.length > 0) bmStats[manager].resolved++;
+            else bmStats[manager].unresolved++;
+        });
+
+        const summaryDataAOA: (string | number)[][] = [];
+        summaryDataAOA.push(['ÖZET RAPORU']);
+        summaryDataAOA.push([]);
+        summaryDataAOA.push(['Genel Metrikler']);
+        summaryDataAOA.push(['Metrik', 'Değer']);
+        summaryDataAOA.push(['Rapor Tipi', exportType === 'unresolved' ? 'Aksiyon Bekleyen' : exportType === 'resolved' ? 'Aksiyon Alınmış' : 'Tüm Yorumlar']);
+        summaryDataAOA.push(['Hafta Filtresi', selectedWeek === 'all' ? 'Tüm Haftalar' : selectedWeek]);
+        summaryDataAOA.push(['Toplam Yorum Sayısı', totalComments]);
+        summaryDataAOA.push(['Aksiyon Alınan Yorum Sayısı', resolvedCount]);
+        summaryDataAOA.push(['Aksiyon Bekleyen Yorum Sayısı', unresolvedCount]);
+        summaryDataAOA.push(['Aksiyon Alınma Oranı', resolutionRate]);
+        summaryDataAOA.push([]);
+        summaryDataAOA.push(['Kategori Bazında Aksiyon Durumu']);
+        summaryDataAOA.push(['Kategori', 'Aksiyon Alınan', 'Aksiyon Bekleyen']);
+        Object.entries(categoryStats).forEach(([category, stats]) => {
+            summaryDataAOA.push([category, stats.resolved, stats.unresolved]);
+        });
+        summaryDataAOA.push([]);
+        summaryDataAOA.push(['Bölge Müdürü Bazında Aksiyon Durumu']);
+        summaryDataAOA.push(['Bölge Müdürü', 'Aksiyon Alınan', 'Aksiyon Bekleyen']);
+        Object.entries(bmStats).sort((a,b) => b[1].unresolved - a[1].unresolved).forEach(([manager, stats]) => {
+             summaryDataAOA.push([manager, stats.resolved, stats.unresolved]);
+        });
+
+        const worksheet2 = XLSX.utils.aoa_to_sheet(summaryDataAOA);
+        worksheet2['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 20 }];
+
+        // Create and download workbook
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Aksiyon Bekleyen Yorumlar");
-
-        const fileName = `Aksiyon_Bekleyen_Yorumlar_${selectedWeek === 'all' ? 'Tum_Haftalar' : selectedWeek}.xlsx`;
+        XLSX.utils.book_append_sheet(workbook, worksheet1, "Detaylı Yorumlar");
+        XLSX.utils.book_append_sheet(workbook, worksheet2, "Özet Raporu");
+        
+        const exportTypeStr = {unresolved: 'Aksiyon_Bekleyen', resolved: 'Aksiyon_Alinmis', all: 'Tum_Yorumlar'}[exportType] || 'Rapor';
+        const weekStr = selectedWeek === 'all' ? 'Tum_Haftalar' : selectedWeek;
+        const fileName = `${exportTypeStr}_${weekStr}.xlsx`;
         XLSX.writeFile(workbook, fileName);
     };
 
@@ -267,7 +357,7 @@ const RegionAnalysisPage: React.FC = () => {
                 <div className="page-header">
                     <div>
                         <p className="page-title">Bölge Karşılaştırma Analizi</p>
-                        <p className="page-subtitle">SOM ve Bölge Müdürü bazında performans metriklerini karşılaştırın.</p>
+                        <p className="page-subtitle">SOM ve Bölge Müdürü bazında memnuniyet metriklerini karşılaştırın.</p>
                     </div>
                 </div>
 
@@ -275,11 +365,19 @@ const RegionAnalysisPage: React.FC = () => {
                     <div className="export-card-info">
                         <span className="material-symbols-outlined export-card-icon">task_alt</span>
                         <div>
-                            <p className="export-card-title">Aksiyon Bekleyen Yorumları Dışa Aktar</p>
-                            <p className="export-card-subtitle">Henüz aksiyon alınmamış tüm olumsuz yorumları Excel'e aktarın.</p>
+                            <p className="export-card-title">Raporları Dışa Aktar</p>
+                            <p className="export-card-subtitle">Filtrelenmiş yorumları detaylı bir şekilde Excel'e aktarın.</p>
                         </div>
                     </div>
                     <div className="export-card-actions">
+                        <div className="filter-group">
+                             <label htmlFor="export-type-filter">Rapor Tipi</label>
+                            <select id="export-type-filter" className="filter-select" value={exportType} onChange={e => setExportType(e.target.value)}>
+                                 <option value="unresolved">Aksiyon Bekleyen Yorumlar</option>
+                                <option value="resolved">Aksiyon Alınmış Yorumlar</option>
+                                <option value="all">Tüm Yorumlar</option>
+                            </select>
+                        </div>
                         <div className="filter-group">
                              <label htmlFor="week-filter-export">Hafta Filtresi (Opsiyonel)</label>
                             <select id="week-filter-export" className="filter-select" value={selectedWeek} onChange={e => setSelectedWeek(e.target.value)}>
@@ -297,7 +395,7 @@ const RegionAnalysisPage: React.FC = () => {
                 
                 <div className="section">
                     <div className="dashboard-grid-2col">
-                         <PerformanceRankingCard title="SOM Performans Sıralaması" data={somPerformanceData} />
+                         <PerformanceRankingCard title="SOM Memnuniyet Sıralaması" data={somPerformanceData} />
                          <SatisfactionDistributionCard 
                             title="SOM Memnuniyet Dağılımı" 
                             data={somSatisfactionDistribution} 
@@ -308,7 +406,7 @@ const RegionAnalysisPage: React.FC = () => {
 
                 <div className="section">
                      <div className="dashboard-grid-2col">
-                         <PerformanceRankingCard title="Bölge Müdürü Performans Sıralaması" data={bmPerformanceData} />
+                         <PerformanceRankingCard title="Bölge Müdürü Memnuniyet Sıralaması" data={bmPerformanceData} />
                          <SatisfactionDistributionCard 
                             title="BM Memnuniyet Dağılımı" 
                             data={bmSatisfactionDistribution}

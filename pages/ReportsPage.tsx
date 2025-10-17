@@ -1,3 +1,5 @@
+
+
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import MainLayout from '../components/MainLayout';
 import { useData } from '../DataContext';
@@ -75,7 +77,7 @@ const ReportPreview: React.FC<{ reportData: ReportData; getManagerForStore: (sto
                     <h2 className="report-h2">3. Mağaza Performansları</h2>
                     <div className="report-performance-grid">
                         <div className="report-performance-column">
-                            <h3 className="report-h3 success">Performans Liderleri (En Yüksek 3)</h3>
+                            <h3 className="report-h3 success">Memnuniyet Liderleri (En Yüksek 3)</h3>
                             {reportData.topStores.map(store => (
                                 <div key={store.id} className="report-store-card">
                                     <div className="report-store-card-header">

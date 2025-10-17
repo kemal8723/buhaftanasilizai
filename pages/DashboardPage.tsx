@@ -339,7 +339,7 @@ const DashboardPage: React.FC = () => {
                 <div className="dashboard-grid-2col">
                      <div className="card">
                         <div className="section-header" style={{marginBottom: 0}}>
-                            <h3 className="section-title">En Yüksek Performanslı Mağazalar</h3>
+                            <h3 className="section-title">En Yüksek Memnuniyetli Mağazalar</h3>
                             <Link to="/stores" className="btn-link">Tümünü Gör &rarr;</Link>
                         </div>
                          <div className="table-container" style={{border: 'none', borderRadius: 0, marginTop: '1rem'}}>
@@ -372,7 +372,7 @@ const DashboardPage: React.FC = () => {
                     </div>
                      <div className="card">
                         <div className="section-header" style={{marginBottom: 0}}>
-                            <h3 className="section-title">En Düşük Performanslı Mağazalar</h3>
+                            <h3 className="section-title">En Düşük Memnuniyetli Mağazalar</h3>
                             <Link to="/stores" className="btn-link">Tümünü Gör &rarr;</Link>
                         </div>
                          <div className="table-container" style={{border: 'none', borderRadius: 0, marginTop: '1rem'}}>

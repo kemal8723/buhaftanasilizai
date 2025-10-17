@@ -406,6 +406,7 @@ const determineSentiment = (text: string, rating: number): 'positive' | 'negativ
 interface DataContextType {
     isAuthenticated: boolean;
     currentUser: User | null;
+    allUsers: User[];
     storeData: StoreData[];
     comments: Comment[];
     loading: boolean;
@@ -924,13 +925,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const prompt = `Bir İK analisti olarak, aşağıdaki çalışan memnuniyeti verilerini analiz et ve üst yönetim için 3 maddelik, eyleme geçirilebilir bir özet rapor oluştur.
 
 **Analiz için Kilit Veriler:**
-*   **En Yüksek Performanslı 3 Mağaza (Memnuniyet %):** ${JSON.stringify(topStores)}
-*   **En Düşük Performanslı 3 Mağaza (Memnuniyet %):** ${JSON.stringify(bottomStores)}
+*   **En Yüksek Memnuniyetli 3 Mağaza (Memnuniyet %):** ${JSON.stringify(topStores)}
+*   **En Düşük Memnuniyetli 3 Mağaza (Memnuniyet %):** ${JSON.stringify(bottomStores)}
 *   **En Çok Geri Bildirim Alan 3 Kategori:** ${JSON.stringify(sortedCategories)}
 *   **Genel Veri Özeti (tüm mağazalar):** ${JSON.stringify(storeData.map(s => ({name: s.name, satisfaction: s.satisfaction, feedbackCount: s.feedbackCount})))}
 
 **Raporunda aşağıdaki 3 maddeye odaklan:**
-1.  **Performans Değerlendirmesi:** En yüksek ve en düşük performanslı mağazalar arasındaki zıtlığı vurgula. Başarılı mağazaların (${topStores.map(s => s.name).join(', ')}) uygulamalarından ne öğrenilebilir? Düşük performanslı mağazalardaki (${bottomStores.map(s => s.name).join(', ')}) en acil riskler nelerdir?
+1.  **Performans Değerlendirmesi:** En yüksek ve en düşük memnuniyetli mağazalar arasındaki zıtlığı vurgula. Başarılı mağazaların (${topStores.map(s => s.name).join(', ')}) uygulamalarından ne öğrenilebilir? Düşük memnuniyetli mağazalardaki (${bottomStores.map(s => s.name).join(', ')}) en acil riskler nelerdir?
 2.  **Öne Çıkan Konular:** En çok geri bildirim alan kategoriler (${sortedCategories.map(c => c.name).join(', ')}), şirket genelindeki ana sorun veya fırsat alanlarını nasıl yansıtıyor? Bu trendi kısaca yorumla.
 3.  **Stratejik Eylem Planı:** Bu verilere dayanarak, genel memnuniyeti artırmak ve en büyük riskleri azaltmak için yönetimin atması gereken en önemli 1-2 adımı öner.
 
@@ -1552,7 +1553,7 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
 
         } catch (err: unknown) {
             console.error("Upload processing failed:", err);
-            // FIX: The 'err' object from a catch block is of type 'unknown' and cannot be directly passed to functions expecting a string (like setError or new Error). It must be converted to a string first.
+            // FIX: The error variable 'err' is of type 'unknown' and cannot be directly assigned to a string. It must first be converted to a string.
             const message = err instanceof Error ? err.message : String(err);
             setError(message);
             throw new Error(message);
@@ -1651,7 +1652,7 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
 
         } catch (err: unknown) {
             console.error("Turnover upload failed:", err);
-            // FIX: The 'err' object from a catch block is of type 'unknown' and cannot be directly passed to functions expecting a string (like setError or new Error). It must be converted to a string first.
+            // FIX: The error variable 'err' is of type 'unknown' and cannot be directly assigned to a string. It must first be converted to a string.
             const message = err instanceof Error ? err.message : String(err);
             setError(message);
             throw new Error(message);
@@ -1793,6 +1794,7 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
     const value: DataContextType = {
         isAuthenticated,
         currentUser,
+        allUsers,
         storeData,
         comments,
         loading,
