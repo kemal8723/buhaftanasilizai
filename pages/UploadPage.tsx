@@ -71,7 +71,7 @@ const UploadPage: React.FC = () => {
         multiple: false,
         noClick: true,
         noKeyboard: true,
-    });
+    } as any);
 
     const { 
         getRootProps: getTurnoverRootProps, 
@@ -84,7 +84,7 @@ const UploadPage: React.FC = () => {
         multiple: false,
         noClick: true,
         noKeyboard: true,
-    });
+    } as any);
     
     const handleUpload = (file: File | null, uploadFunction: (data: any[][], file: File) => Promise<void>, errorSetter: (msg: string | null) => void) => {
         if (!file) return;

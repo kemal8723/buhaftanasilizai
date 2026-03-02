@@ -36,6 +36,7 @@ const FormattedMessage: React.FC<{ text: string }> = ({ text }) => {
     return <>{content}</>;
 };
 
+
 const AIChatAssistant: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<ChatMessage[]>([
@@ -48,6 +49,28 @@ const AIChatAssistant: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const { storeData, comments, getManagerForStore } = useData();
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    
+    const [isBubbleVisible, setIsBubbleVisible] = useState(false);
+
+    useEffect(() => {
+        const showBubble = () => {
+            setIsBubbleVisible(true);
+
+            setTimeout(() => {
+                setIsBubbleVisible(false);
+            }, 8000); // Bubble stays visible for 8 seconds
+        };
+
+        // Show bubble initially after a delay, then set an interval
+        const initialTimeout = setTimeout(showBubble, 4000);
+        const interval = setInterval(showBubble, 30000); // Show bubble every 30 seconds
+
+        return () => {
+            clearTimeout(initialTimeout);
+            clearInterval(interval);
+        };
+    }, []);
+
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -58,6 +81,14 @@ const AIChatAssistant: React.FC = () => {
             scrollToBottom();
         }
     }, [messages, isOpen]);
+    
+    const toggleChat = () => {
+        setIsOpen(prev => !prev);
+        // Hide bubble immediately when FAB is clicked
+        if (isBubbleVisible) {
+            setIsBubbleVisible(false);
+        }
+    };
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -83,7 +114,7 @@ const AIChatAssistant: React.FC = () => {
 
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             
-            const prompt = `Sen, "GEN AI Analiz Asistanı" adlı, bir İK veri analizi konusunda uzman bir yapay zekasın. Görevin, sana sunulan mağaza, çalışan yorumu ve turnover verilerini analiz ederek kullanıcının sorularını Türkçe olarak yanıtlamaktır.
+            const prompt = `Sen, "GEN AI Analiz Asistanı" adlı, bir İK veri analizi konusunda uzman bir yapay zekasın. Görevin, sana sunulan mağaza, çalışan yorumu ve turnover verilerini analiz ederek kullanıcının sorularını Türkçe olarak yanıtlamaktır. **Önemli Not:** 'satisfaction' (memnuniyet) değeri, mağazanın çalışanlardan aldığı 1-5 arası puanların doğrudan ortalamasıdır ve 1 ile 5 arasında bir değerdir.
 
 **Yeteneklerin:**
 - Mağaza performanslarını karşılaştırabilirsin (örn: "En düşük memnuniyete sahip 3 mağaza hangisi?").
@@ -134,13 +165,16 @@ ${messages.map(m => `${m.role === 'user' ? 'Kullanıcı' : 'Asistan'}: ${m.conte
 
     return (
         <div className="ai-chat-container">
+            <div className={`ai-chat-bubble ${isBubbleVisible && !isOpen ? 'visible' : ''}`}>
+                Merak ettiğin her şeyi bana sor <span className="wave-emoji-fab">👋</span>
+            </div>
             <div className={`ai-chat-window ${isOpen ? 'open' : 'closed'}`}>
                 <div className="ai-chat-header">
                     <div className="ai-chat-title-group">
                         <span className="material-symbols-outlined ai-icon">auto_awesome</span>
                         <h3 className="ai-chat-title">GEN AI Analiz Asistanı</h3>
                     </div>
-                    <button className="ai-chat-close-btn" onClick={() => setIsOpen(false)} aria-label="Kapat">
+                    <button className="ai-chat-close-btn" onClick={toggleChat} aria-label="Kapat">
                          <span className="material-symbols-outlined">close</span>
                     </button>
                 </div>
@@ -175,7 +209,7 @@ ${messages.map(m => `${m.role === 'user' ? 'Kullanıcı' : 'Asistan'}: ${m.conte
                     </form>
                 </div>
             </div>
-            <button className={`ai-chat-fab ${isOpen ? 'open' : ''}`} onClick={() => setIsOpen(!isOpen)} aria-label={isOpen ? "Asistanı Kapat" : "Asistanı Aç"}>
+            <button className={`ai-chat-fab ${isOpen ? 'open' : ''}`} onClick={toggleChat} aria-label={isOpen ? "Asistanı Kapat" : "Asistanı Aç"}>
                 <span className="material-symbols-outlined">close</span>
             </button>
         </div>

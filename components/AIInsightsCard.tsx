@@ -1,11 +1,11 @@
-import React, { useState, useMemo } from 'react';
-import { StoreData, Comment, AIAnalysisResponse, TurnoverRiskAnalysis, SuccessAnalysisResponse, AnomalyDetectionResponse } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { StoreData, Comment, AIAnalysisResponse, TurnoverRiskAnalysis, SuccessAnalysisResponse, AnomalyDetectionResponse, RiskRadarResponse, ActionAnalysisResponse } from '../types';
 import { Link } from 'react-router-dom';
 import { useData } from '../DataContext';
 
 
 interface AIInsightsCardProps {
-    defaultTab?: 'summary' | 'focus' | 'turnover' | 'success' | 'anomalies';
+    defaultTab?: 'summary' | 'focus' | 'turnover' | 'success' | 'anomalies' | 'riskRadar' | 'actionAnalysis';
     storeData: StoreData[];
     comments: Comment[];
 }
@@ -19,7 +19,8 @@ const createAnalysisFingerprint = (storeData: StoreData[], comments: Comment[]):
 
 
 const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary', storeData, comments }) => {
-    const [activeTab, setActiveTab] = useState<'summary' | 'focus' | 'turnover' | 'success' | 'anomalies'>(defaultTab);
+    const [activeTab, setActiveTab] = useState<'summary' | 'focus' | 'turnover' | 'success' | 'anomalies' | 'riskRadar' | 'actionAnalysis'>(defaultTab);
+    const [loadingMessage, setLoadingMessage] = useState('Analiz başlatılıyor...');
     
     const { 
         aiAnalyses,
@@ -28,15 +29,44 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
         generateTurnoverRisk,
         generateSuccess,
         generateAnomalies,
+        generateRiskRadar,
+        generateActionAnalysis,
     } = useData();
 
     const currentFingerprint = useMemo(() => createAnalysisFingerprint(storeData, comments), [storeData, comments]);
+    
+    const analysisState = aiAnalyses[activeTab];
+    const isDataStale = analysisState.fingerprint !== currentFingerprint;
+    const isLoading = analysisState.loading && !isDataStale;
+
+    useEffect(() => {
+        let intervalId: number | undefined;
+        if (isLoading) {
+            const messages = [
+                "Veriler hazırlanıyor ve ön işleme alınıyor...",
+                "Yorumlar analiz ediliyor, duygu ve temalar çıkarılıyor...",
+                "Kök nedenler ve kritik içgörüler belirleniyor...",
+                "Eyleme yönelik öneriler oluşturuluyor...",
+                "Sonuçlar derleniyor ve rapor hazırlanıyor..."
+            ];
+            let messageIndex = 0;
+            setLoadingMessage(messages[messageIndex]);
+    
+            intervalId = window.setInterval(() => {
+                messageIndex = (messageIndex + 1) % messages.length;
+                setLoadingMessage(messages[messageIndex]);
+            }, 2500);
+        }
+        return () => clearInterval(intervalId);
+    }, [isLoading]);
 
     const renderLoadingState = () => (
-        <div className="loading-placeholder">
-            <div className="loading-bar" style={{width: '75%'}}></div>
-            <div className="loading-bar" style={{width: '100%'}}></div>
-            <div className="loading-bar" style={{width: '83%'}}></div>
+        <div className="loading-placeholder enhanced-loading">
+            <div className="spinner"></div>
+            <p className="loading-text">{loadingMessage}</p>
+            <div className="loading-dots">
+                <span>.</span><span>.</span><span>.</span>
+            </div>
         </div>
     );
     
@@ -239,9 +269,85 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
         </div>
     );
     
-    const analysisState = aiAnalyses[activeTab];
-    const isDataStale = analysisState.fingerprint !== currentFingerprint;
-    const isLoading = analysisState.loading && !isDataStale;
+    const renderRiskRadarContent = (riskRadarAnalysis: RiskRadarResponse | null) => {
+        if (!riskRadarAnalysis) return renderRiskRadarInitialState();
+        return (
+            <div className="ai-content-container">
+                <p className="ai-summary">{riskRadarAnalysis.summary}</p>
+                <div className="turnover-risk-list">
+                    {riskRadarAnalysis.potentialRisks.map((risk, index) => {
+                         const storeLink = storeData.find(s => s.name === risk.storeName);
+                         return (
+                            <div key={index} className="turnover-risk-item">
+                                <div className="store-header">
+                                    <p className="store-name">
+                                        {storeLink ? <Link to={`/store/${storeLink.id}`}>{risk.storeName}</Link> : risk.storeName}
+                                    </p>
+                                    <span className={`risk-level-tag ${risk.urgency === 'Yüksek' ? 'turnover-risk-high' : 'turnover-risk-medium'}`}>{risk.urgency} Öncelik</span>
+                                </div>
+                                <div className="risk-details">
+                                    <p className="risk-reason"><strong>Risk Tipi:</strong> {risk.riskType}</p>
+                                    <p className="risk-reason"><strong>Tespit:</strong> {risk.description}</p>
+                                    <p className="risk-evidence"><strong>Kanıt:</strong> <em>"{risk.evidence}"</em></p>
+                                </div>
+                            </div>
+                         )
+                    })}
+                </div>
+            </div>
+        );
+    };
+
+    const renderRiskRadarInitialState = () => (
+        <div className="ai-initial-state">
+            <p className="ai-initial-text">Gelecekteki potansiyel sorunları (düşen performans, tükenmişlik sinyalleri vb.) proaktif olarak tespit etmek için risk radarı analizini başlatın.</p>
+            <button onClick={() => generateRiskRadar(storeData, comments)} className="btn btn-primary" disabled={aiAnalyses.riskRadar.loading || comments.length < 20}>
+                {aiAnalyses.riskRadar.loading ? 'Analiz Ediliyor...' : <><span className="material-symbols-outlined">radar</span> Riskleri Tara</>}
+            </button>
+            {comments.length < 20 && <p className="ai-initial-text" style={{fontSize: '0.75rem', marginTop: '0.5rem'}}>Risk radarı için en az 20 yorum gereklidir.</p>}
+        </div>
+    );
+    
+    const renderActionAnalysisContent = (actionAnalysis: ActionAnalysisResponse | null) => {
+        if (!actionAnalysis) return renderActionAnalysisInitialState();
+        const getAnalysisClass = (analysis: string) => {
+            if (analysis === 'Pozitif Değişim') return 'positive';
+            if (analysis === 'Negatif Değişim') return 'negative';
+            return 'neutral';
+        }
+        return (
+            <div className="ai-content-container">
+                <p className="ai-summary">{actionAnalysis.summary}</p>
+                 <div className="success-factors-list">
+                    {actionAnalysis.analyzedActions.map((item, index) => (
+                        <div key={index} className="success-factor-item">
+                            <div className="factor-header">
+                                <p className="factor-theme">{item.storeName}: {item.topic}</p>
+                                <span className={`sentiment-badge sentiment-${getAnalysisClass(item.analysis)}`}>{item.analysis}</span>
+                            </div>
+                            <p className="factor-description"><strong>Aksiyon:</strong> {item.actionTaken}</p>
+                            <div className="factor-evidence">
+                                <p className="factor-evidence-text"><em>"{item.evidence}"</em></p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
+    const renderActionAnalysisInitialState = () => (
+        <div className="ai-initial-state">
+            <p className="ai-initial-text">Yöneticiler tarafından alınan aksiyonların ne kadar etkili olduğunu ve sorunları çözüp çözmediğini analiz edin.</p>
+            <button onClick={() => generateActionAnalysis(storeData, comments)} className="btn btn-primary" disabled={aiAnalyses.actionAnalysis.loading || comments.filter(c => c.actions && c.actions.length > 0).length < 3}>
+                {aiAnalyses.actionAnalysis.loading ? 'Analiz Ediliyor...' : <><span className="material-symbols-outlined">fact_check</span> Aksiyonları Analiz Et</>}
+            </button>
+            {comments.filter(c => c.actions && c.actions.length > 0).length < 3 && <p className="ai-initial-text" style={{fontSize: '0.75rem', marginTop: '0.5rem'}}>Analiz için en az 3 aksiyon alınmış yorum gereklidir.</p>}
+        </div>
+    );
+
+
+    
     const currentData = analysisState.result;
     const error = analysisState.error;
 
@@ -257,6 +363,8 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
                 case 'turnover': return renderTurnoverRiskInitialState();
                 case 'success': return renderSuccessInitialState();
                 case 'anomalies': return renderAnomaliesInitialState();
+                case 'riskRadar': return renderRiskRadarInitialState();
+                case 'actionAnalysis': return renderActionAnalysisInitialState();
                 default: return null;
             }
         }
@@ -268,6 +376,8 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
             case 'turnover': return renderTurnoverRiskContent(currentData as TurnoverRiskAnalysis | null);
             case 'success': return renderSuccessContent(currentData as SuccessAnalysisResponse | null);
             case 'anomalies': return renderAnomaliesContent(currentData as AnomalyDetectionResponse | null);
+            case 'riskRadar': return renderRiskRadarContent(currentData as RiskRadarResponse | null);
+            case 'actionAnalysis': return renderActionAnalysisContent(currentData as ActionAnalysisResponse | null);
             default: return null;
         }
     };
@@ -281,8 +391,25 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
         handleRefresh = () => generateTurnoverRisk(storeData, comments);
     } else if (activeTab === 'success') {
         handleRefresh = () => generateSuccess(storeData, comments);
-    } else { // anomalies
+    } else if (activeTab === 'anomalies') {
         handleRefresh = () => generateAnomalies(storeData, comments);
+    } else if (activeTab === 'riskRadar') {
+        handleRefresh = () => generateRiskRadar(storeData, comments);
+    } else { // actionAnalysis
+        handleRefresh = () => generateActionAnalysis(storeData, comments);
+    }
+
+    const getIconForTab = (tab: typeof activeTab) => {
+        switch (tab) {
+            case 'summary': return 'auto_awesome';
+            case 'focus': return 'filter_center_focus';
+            case 'success': return 'workspace_premium';
+            case 'turnover': return 'trending_down';
+            case 'anomalies': return 'crisis_alert';
+            case 'riskRadar': return 'radar';
+            case 'actionAnalysis': return 'fact_check';
+            default: return 'help';
+        }
     }
 
     return (
@@ -290,7 +417,7 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
             <div className="ai-header">
                 <div className="ai-header-main">
                     <span className="material-symbols-outlined ai-icon">
-                        {activeTab === 'summary' ? 'auto_awesome' : (activeTab === 'focus' ? 'filter_center_focus' : (activeTab === 'success' ? 'workspace_premium' : (activeTab === 'anomalies' ? 'crisis_alert' : 'trending_down')))}
+                        {getIconForTab(activeTab)}
                     </span>
                     <h3 className="ai-title">Yapay Zeka Analizi</h3>
                 </div>
@@ -299,7 +426,9 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({ defaultTab = 'summary',
                         <button className={`ai-tab-btn ${activeTab === 'summary' ? 'active' : ''}`} onClick={() => setActiveTab('summary')}>Özet</button>
                         <button className={`ai-tab-btn ${activeTab === 'focus' ? 'active' : ''}`} onClick={() => setActiveTab('focus')}>Odak Mağazalar</button>
                         <button className={`ai-tab-btn ${activeTab === 'success' ? 'active' : ''}`} onClick={() => setActiveTab('success')}>Başarı Analizi</button>
+                        <button className={`ai-tab-btn ${activeTab === 'actionAnalysis' ? 'active' : ''}`} onClick={() => setActiveTab('actionAnalysis')}>Aksiyon Analizi</button>
                         <button className={`ai-tab-btn ${activeTab === 'turnover' ? 'active' : ''}`} onClick={() => setActiveTab('turnover')}>Turnover Riski</button>
+                        <button className={`ai-tab-btn ${activeTab === 'riskRadar' ? 'active' : ''}`} onClick={() => setActiveTab('riskRadar')}>Risk Radarı</button>
                         <button className={`ai-tab-btn ${activeTab === 'anomalies' ? 'active' : ''}`} onClick={() => setActiveTab('anomalies')}>Uyarılar</button>
                     </div>
                     {currentData && !isLoading && !isDataStale && (

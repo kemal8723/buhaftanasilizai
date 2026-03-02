@@ -1,5 +1,3 @@
-
-
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import MainLayout from '../components/MainLayout';
 import { useData } from '../DataContext';
@@ -17,7 +15,7 @@ interface ReportData {
     manager: string;
     dateRangeText: string;
     generationDate: string;
-    overallSatisfaction: string;
+    overallSatisfaction: number;
     totalFeedback: number;
     storesNeedingActionCount: number;
     satisfactionDistribution: ChartData[];
@@ -29,8 +27,8 @@ interface ReportData {
 }
 
 const getSatisfactionBarClass = (satisfaction: number) => {
-    if (satisfaction >= 70) return 'satisfaction-bar-high';
-    if (satisfaction >= 50) return 'satisfaction-bar-medium';
+    if (satisfaction >= 4.0) return 'satisfaction-bar-high';
+    if (satisfaction >= 3.0) return 'satisfaction-bar-medium';
     return 'satisfaction-bar-low';
 };
 
@@ -60,7 +58,7 @@ const ReportPreview: React.FC<{ reportData: ReportData; getManagerForStore: (sto
                     <div className="report-kpi-grid">
                         <div className="report-kpi-card">
                             <h3>Genel Memnuniyet</h3>
-                            <p>{reportData.overallSatisfaction}%</p>
+                            <p>{reportData.overallSatisfaction.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 5</p>
                         </div>
                         <div className="report-kpi-card">
                             <h3>Filtrelenmiş Geri Bildirim</h3>
@@ -80,13 +78,11 @@ const ReportPreview: React.FC<{ reportData: ReportData; getManagerForStore: (sto
                             <h3 className="report-h3 success">Memnuniyet Liderleri (En Yüksek 3)</h3>
                             {reportData.topStores.map(store => (
                                 <div key={store.id} className="report-store-card">
-                                    <div className="report-store-card-header">
-                                        <span className="report-store-card-name">{store.name}</span>
-                                        <span className="report-store-card-score">{store.satisfaction}%</span>
-                                    </div>
-                                    <div className="report-store-card-bar">
+                                    <span className="report-store-card-name">{store.name}</span>
+                                    <div className="satisfaction-cell">
+                                        <span className="satisfaction-value">{store.satisfaction.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 5</span>
                                         <div className="satisfaction-bar-container">
-                                            <div className={`satisfaction-bar ${getSatisfactionBarClass(store.satisfaction)}`} style={{ width: `${store.satisfaction}%` }}></div>
+                                            <div className={`satisfaction-bar ${getSatisfactionBarClass(store.satisfaction)}`} style={{ width: `${(store.satisfaction / 5) * 100}%` }}></div>
                                         </div>
                                     </div>
                                      <p className="report-store-card-meta">{store.feedbackCount} Geri Bildirim</p>
@@ -97,13 +93,11 @@ const ReportPreview: React.FC<{ reportData: ReportData; getManagerForStore: (sto
                             <h3 className="report-h3 danger">Fırsat Alanları (En Düşük 3)</h3>
                             {reportData.bottomStores.map(store => (
                                <div key={store.id} className="report-store-card">
-                                    <div className="report-store-card-header">
-                                        <span className="report-store-card-name">{store.name}</span>
-                                        <span className="report-store-card-score">{store.satisfaction}%</span>
-                                    </div>
-                                    <div className="report-store-card-bar">
+                                    <span className="report-store-card-name">{store.name}</span>
+                                    <div className="satisfaction-cell">
+                                        <span className="satisfaction-value">{store.satisfaction.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 5</span>
                                         <div className="satisfaction-bar-container">
-                                            <div className={`satisfaction-bar ${getSatisfactionBarClass(store.satisfaction)}`} style={{ width: `${store.satisfaction}%` }}></div>
+                                            <div className={`satisfaction-bar ${getSatisfactionBarClass(store.satisfaction)}`} style={{ width: `${(store.satisfaction / 5) * 100}%` }}></div>
                                         </div>
                                     </div>
                                     <p className="report-store-card-meta">{store.feedbackCount} Geri Bildirim</p>
@@ -154,9 +148,9 @@ const ReportPreview: React.FC<{ reportData: ReportData; getManagerForStore: (sto
                                         <td>{getManagerForStore(store.name) || 'N/A'}</td>
                                         <td>
                                             <div className="satisfaction-cell">
-                                                <span className="satisfaction-value">{store.satisfaction}%</span>
+                                                <span className="satisfaction-value">{store.satisfaction.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 5</span>
                                                 <div className="satisfaction-bar-container">
-                                                    <div className={`satisfaction-bar ${getSatisfactionBarClass(store.satisfaction)}`} style={{ width: `${store.satisfaction}%` }}></div>
+                                                    <div className={`satisfaction-bar ${getSatisfactionBarClass(store.satisfaction)}`} style={{ width: `${(store.satisfaction / 5) * 100}%` }}></div>
                                                 </div>
                                             </div>
                                         </td>
@@ -265,8 +259,10 @@ const ReportsPage: React.FC = () => {
             reportStoresData = Array.from(storesWithKeywordComments.entries()).map(([storeName, data]) => {
                 const originalStore = storeData.find(s => s.name === storeName)!;
                 const feedbackCount = data.comments.length;
-                const positiveCount = data.comments.filter(c => c.sentiment === 'positive').length;
-                const satisfaction = feedbackCount > 0 ? Math.round((positiveCount / feedbackCount) * 100) : 0;
+                const commentsWithRating = data.comments.filter(c => typeof c.rating === 'number' && c.rating >= 1 && c.rating <= 5);
+                const satisfaction = commentsWithRating.length > 0
+                    ? (commentsWithRating.reduce((sum, c) => sum + c.rating!, 0) / commentsWithRating.length)
+                    : 0;
                 return {
                     ...originalStore,
                     satisfaction,
@@ -289,11 +285,11 @@ const ReportsPage: React.FC = () => {
         });
         const storesNeedingActionCount = storesWithUnaddressedNegativeComments.size;
 
-        const overallSatisfaction = reportStoresData.length > 0 ? (reportStoresData.reduce((acc, store) => acc + store.satisfaction, 0) / reportStoresData.length).toFixed(1) : '0';
+        const overallSatisfaction = reportStoresData.length > 0 ? (reportStoresData.reduce((acc, store) => acc + store.satisfaction, 0) / reportStoresData.length) : 0;
         const satisfactionDistribution = [
-            { name: 'Yüksek (>70%)', value: reportStoresData.filter(s => s.satisfaction >= 70).length },
-            { name: 'Orta (50-69%)', value: reportStoresData.filter(s => s.satisfaction >= 50 && s.satisfaction < 70).length },
-            { name: 'Düşük (<50%)', value: reportStoresData.filter(s => s.satisfaction < 50).length },
+            { name: 'Yüksek (4.0+)', value: reportStoresData.filter(s => s.satisfaction >= 4.0).length },
+            { name: 'Orta (3.0-3.99)', value: reportStoresData.filter(s => s.satisfaction >= 3.0 && s.satisfaction < 4.0).length },
+            { name: 'Düşük (<3.0)', value: reportStoresData.filter(s => s.satisfaction < 3.0).length },
         ].filter(d => d.value > 0);
         const sortedStores = [...reportStoresData].sort((a, b) => b.satisfaction - a.satisfaction);
         const topStores = sortedStores.slice(0, 3);
@@ -322,9 +318,9 @@ const ReportsPage: React.FC = () => {
                 
                 const prompt = `Bir yönetici için, aşağıdaki çalışan memnuniyeti verilerini analiz ederek 2-3 cümlelik bir özet çıkar. Özet, ${selectedSom !== 'Tümü' ? `SOM ${selectedSom}'a bağlı` : ''} ${selectedManager !== 'Tümü' ? `Bölge Müdürü ${selectedManager}'a bağlı` : (selectedSom === 'Tümü' ? 'tüm' : '')} mağazalar için ${dateRangeText} dönemini kapsamalıdır. ${keywordPromptPart}
 
-                - Genel Memnuniyet (Filtrelenen Mağaza Ortalaması): ${overallSatisfaction}%
-                - En İyi Mağazalar (Bu konudaki): ${topStores.map(s => `${s.name} (${s.satisfaction}%)`).join(', ')}
-                - En Zayıf Mağazalar (Bu konudaki): ${bottomStores.map(s => `${s.name} (${s.satisfaction}%)`).join(', ')}
+                - Genel Memnuniyet (Filtrelenen Mağaza Ortalaması, 5 üzerinden): ${overallSatisfaction.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                - En İyi Mağazalar (Bu konudaki): ${topStores.map(s => `${s.name} (${s.satisfaction.toFixed(2)}/5)`).join(', ')}
+                - En Zayıf Mağazalar (Bu konudaki): ${bottomStores.map(s => `${s.name} (${s.satisfaction.toFixed(2)}/5)`).join(', ')}
                 - İlgili Yorum Sayısı: ${totalFeedback}
                 - Öne Çıkan Konular: ${overallFeedbackByCategory.slice(0, 2).map(c => c.name).join(', ')}
                 `;
@@ -497,7 +493,7 @@ const ReportsPage: React.FC = () => {
                                 <div className="tooltip-icon-wrapper">
                                     <span className="material-symbols-outlined">help</span>
                                     <div className="tooltip-text">
-                                        Bu alana bir kelime (örn: "maaş", "yönetici", "stres") yazarak, yalnızca o kelimeyi içeren yorumlara dayalı odaklanmış bir rapor oluşturabilirsiniz. Yapay zeka özeti de bu anahtar kelimeye göre şekillenecektir.
+                                        Buraya bir anahtar kelime (örn: 'maaş') yazarak, yalnızca o kelimeyi içeren yorumlara dayalı odaklanmış bir rapor oluşturun. Raporun tüm metrikleri (memnuniyet puanları dahil) anlık olarak bu filtrelenmiş yorumlara göre yeniden hesaplanır. Yapay zeka özeti de bu konuya odaklanacaktır.
                                     </div>
                                 </div>
                             </label>

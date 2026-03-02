@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-// FIX: Changed AnomalyDetection to AnomalyDetectionResponse to match the exported type from './types'.
-import { StoreData, Comment, User, ChartData, TurnoverData, WeekFilterOption, MonthFilterOption, TurnoverHistory, UploadedFile, ActionTaken, AIAnalysisState, AIAnalysisResponse, TurnoverRiskAnalysis, SuccessAnalysisResponse, AnomalyDetectionResponse, WordCloudWord } from './types';
+// FIX: Added Notification to imports to support the new notification system.
+import { StoreData, Comment, User, ChartData, TurnoverData, WeekFilterOption, MonthFilterOption, TurnoverHistory, UploadedFile, ActionTaken, AIAnalysisState, AIAnalysisResponse, TurnoverRiskAnalysis, SuccessAnalysisResponse, AnomalyDetectionResponse, RiskRadarResponse, ActionAnalysisResponse, WordCloudWord, Notification, StoreInterview, ExitInterview } from './types';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -193,9 +193,11 @@ const processAllData = (comments: Comment[], turnoverData: Map<string, TurnoverD
     return Array.from(allStoreNames).map(storeName => {
         const storeComments = commentsByStore.get(storeName) || [];
         const feedbackCount = storeComments.length;
-        const positiveComments = storeComments.filter(c => c.sentiment === 'positive');
         
-        const satisfaction = feedbackCount > 0 ? Math.round((positiveComments.length / feedbackCount) * 100) : 0;
+        const commentsWithRating = storeComments.filter(c => typeof c.rating === 'number' && c.rating >= 1 && c.rating <= 5);
+        const satisfaction = commentsWithRating.length > 0
+            ? (commentsWithRating.reduce((sum, c) => sum + c.rating!, 0) / commentsWithRating.length)
+            : 0;
 
         const feedbackByCategoryMap: { [key: string]: number } = {};
         storeComments.forEach(c => {
@@ -280,21 +282,30 @@ const CATEGORIES_CONFIG = {
         keywords: { 'ekip': 8, 'takım': 8, 'arkadaşlar': 7, 'ortam': 6, 'atmosfer': 6, 'huzur': 7, 'dedikodu': 9, 'saygısızlık': 9, 'iletişimsizlik': 8, 'kültür': 5, 'mutlu': 6 }
     },
     "Operasyon & Fiziksel Şartlar": {
-        phrases: ['kasa sorunu', 'teknik arıza', 'fiziksel koşullar'],
-        keywords: { 'depo': 7, 'mal': 6, 'sevkiyat': 7, 'ürün': 5, 'kasa': 8, 'sistem': 8, 'teknik': 8, 'fiziksel': 7, 'temizlik': 6, 'koşullar': 7, 'ekipman': 8 }
+        phrases: [
+            'kasa sorunu', 'teknik arıza', 'fiziksel koşullar', 'fiziki şartlar',
+            'klimalar bozuk', 'klima bozuk', 'klimalar çalışmıyor', 'klima çalışmıyor',
+            'mağaza soğuk', 'mağaza sıcak'
+        ],
+        keywords: { 
+            'depo': 7, 'mal': 6, 'sevkiyat': 7, 'ürün': 5, 'kasa': 8, 'sistem': 8,
+            'teknik': 8, 'fiziksel': 7, 'temizlik': 6, 'koşullar': 7, 'ekipman': 8,
+            'klima': 20, 'ısıtma': 18, 'soğutma': 18, 'havalandırma': 18,
+            'soğuk': 20, 'sıcak': 20, 'bozuk': 15
+        }
     }
 };
 const CATEGORY_PRIORITY = [
     "Maaş & Yan Haklar",
     "Yönetim & Liderlik",
     "İş Yükü & Denge",
+    "Operasyon & Fiziksel Şartlar", // Increased priority
     "Kariyer & Gelişim",
     "Ekip İlişkileri & Kültür",
-    "Operasyon & Fiziksel Şartlar",
 ];
-const TYPICALLY_NEGATIVE_CATEGORIES = ["Maaş & Yan Haklar", "Yönetim & Liderlik", "İş Yükü & Denge"];
+const TYPICALLY_NEGATIVE_CATEGORIES = ["Maaş & Yan Haklar", "Yönetim & Liderlik", "İş Yükü & Denge", "Operasyon & Fiziksel Şartlar"];
 
-const categorizeCommentV2 = (text: string, sentiment: 'positive' | 'negative' | 'neutral'): string => {
+const categorizeComment = (text: string, sentiment: 'positive' | 'negative' | 'neutral'): string => {
     if (!text) return 'Genel';
     const normalizedText = normalizeTurkish(text);
     
@@ -304,18 +315,21 @@ const categorizeCommentV2 = (text: string, sentiment: 'positive' | 'negative' | 
     for (const category of CATEGORY_PRIORITY) {
         const config = CATEGORIES_CONFIG[category as keyof typeof CATEGORIES_CONFIG];
         
+        // Phrase matching (high score for specific phrases)
         if (config.phrases) {
             for (const phrase of config.phrases) {
                 if (normalizedText.includes(normalizeTurkish(phrase))) {
-                    scores[category] += 15;
+                    scores[category] += 25; // Increased phrase score
                 }
             }
         }
 
+        // Keyword matching (handles suffixes by removing word boundaries)
         if (config.keywords) {
             for (const [keyword, weight] of Object.entries(config.keywords)) {
                 const normalizedKeyword = normalizeTurkish(keyword);
-                const regex = new RegExp(`\\b${normalizedKeyword}\\b`, 'g');
+                // Regex without word boundaries to catch suffixed words (e.g., 'klima' in 'klimalar')
+                const regex = new RegExp(normalizedKeyword, 'g');
                 const matches = normalizedText.match(regex);
                 if (matches) {
                     scores[category] += matches.length * weight;
@@ -324,16 +338,15 @@ const categorizeCommentV2 = (text: string, sentiment: 'positive' | 'negative' | 
         }
     }
 
-    // Adjust scores based on overall comment sentiment for more accurate categorization
+    // Sentiment-based score adjustment
     if (sentiment === 'negative') {
         TYPICALLY_NEGATIVE_CATEGORIES.forEach(cat => {
-            if (scores[cat] > 0) scores[cat] *= 1.2; // Give a 20% boost to likely negative topics
+            if (scores[cat] > 0) scores[cat] *= 1.3; // Stronger boost for negative comments in typical problem areas
         });
     } else if (sentiment === 'positive') {
         TYPICALLY_NEGATIVE_CATEGORIES.forEach(cat => {
-            if (scores[cat] > 0) scores[cat] *= 0.7; // Penalize typically negative topics
+            if (scores[cat] > 0) scores[cat] *= 0.6; // Stronger reduction for positive comments in problem areas
         });
-        // Boost typically positive/neutral topics
         if (scores["Ekip İlişkileri & Kültür"] > 0) scores["Ekip İlişkileri & Kültür"] *= 1.2;
         if (scores["Kariyer & Gelişim"] > 0) scores["Kariyer & Gelişim"] *= 1.2;
     }
@@ -341,6 +354,7 @@ const categorizeCommentV2 = (text: string, sentiment: 'positive' | 'negative' | 
 
     let maxScore = 0;
     let winningCategory = 'Genel';
+    // Find the category with the highest score
     for (const category of CATEGORY_PRIORITY) {
         if (scores[category] > maxScore) {
             maxScore = scores[category];
@@ -348,7 +362,8 @@ const categorizeCommentV2 = (text: string, sentiment: 'positive' | 'negative' | 
         }
     }
 
-    if (maxScore < 5) {
+    // A low threshold is fine now because critical keywords have very high weights.
+    if (maxScore < 8) {
         return 'Genel';
     }
 
@@ -359,48 +374,80 @@ const determineSentiment = (text: string, rating: number): 'positive' | 'negativ
     const normalizedText = normalizeTurkish(text.trim());
 
     if (!normalizedText) {
-        if (rating > 3) return 'positive';
-        if (rating < 3) return 'negative';
+        if (rating > 3.5) return 'positive';
+        if (rating < 2.5) return 'negative';
         return 'neutral';
     }
 
     if (/(sikayet|sorun|problem|sikinti|rahatsizlik|olumsuz).{0,25}yok/.test(normalizedText) || /memnuniyetsizlik.*yok/.test(normalizedText)) {
         return 'positive';
     }
-    if (normalizedText.includes('kotu degil') || normalizedText.includes('fena degil')) {
+    if (normalizedText.includes('kotu degil') || normalizedText.includes('fena degil') || normalizedText.includes('idare eder')) {
         return 'neutral';
     }
 
-    let score = 0;
     const positiveKeywords: { [key: string]: number } = {
-        'mükemmel': 3, 'harika': 3, 'çok iyi': 2, 'çok güzel': 2, 'mutluyum': 3, 'teşekkür': 2, 'memnun': 2,
-        'başarılı': 2, 'süper': 2, 'güzel': 1, 'iyi': 1, 'sevdim': 2, 'kolay': 1, 'çok memnunum': 3,
+        'mükemmel': 3, 'harika': 3, 'mutluyum': 3, 'sevdim': 2, 'memnunum': 3, 'memnun': 2,
+        'teşekkür': 2, 'başarılı': 2, 'süper': 2, 'destekleyici': 2, 'yardımcı': 2, 'anlayışlı': 2,
+        'adil': 2, 'motive': 2, 'huzurlu': 2, 'keyifli': 2, 'güzel': 1.5, 'iyi': 1, 'kolay': 1, 'olumlu': 2,
+        'gelişim': 1.5, 'fırsat': 1.5, 'takdir': 2.5,
     };
     const negativeKeywords: { [key: string]: number } = {
-        'berbat': -4, 'rezalet': -4, 'korkunç': -3, 'iğrenç': -3, 'istifa': -3, 'ayrılmak': -3, 'mobbing': -5,
-        'baskı': -3, 'şikayetçiyim': -3, 'dayanılmaz': -3, 'çekilmez': -3, 'alamıyoruz': -3, 'alamıyorum': -3, 'kalmıyor': -3,
-        'üzücü': -3, 'mutsuz': -2, 'sorun': -2, 'problem': -2, 'kötü': -2, 'yetersiz': -2, 'eksik': -2,
-        'zor': -2, 'düşük': -2, 'az': -2, 'maalesef': -2, 'malesef': -2, 'yoğun': -1, 'stres': -2, 'saçma': -2,
-        ':(': -4, ';(': -4, ':((': -5
+        'berbat': 3, 'rezalet': 3, 'korkunç': 3, 'iğrenç': 3, 'istifa': 4, 'ayrılmak': 4, 'mobbing': 5,
+        'baskı': 3, 'şikayet': 3, 'dayanılmaz': 3, 'çekilmez': 3, 'alamıyoruz': 2.5, 'alamıyorum': 2.5,
+        'kalmıyor': 2, 'üzücü': 2, 'mutsuz': 3, 'sorun': 2.5, 'problem': 2.5, 'kötü': 2, 'yetersiz': 2,
+        'eksik': 2, 'zor': 2, 'düşük': 2, 'az': 1, 'maalesef': 1, 'malesef': 1, 'yoğun': 1, 'stres': 2.5,
+        'saçma': 2, 'adaletsiz': 3.5, 'haksızlık': 3.5, 'saygısız': 3, 'tükenmişlik': 4, 'yorgun': 2,
+        'dedikodu': 2, 'kavga': 2.5, 'olumsuz': 2, 'hakaret': 4
     };
-    
-    Object.entries(positiveKeywords).forEach(([word, value]) => {
-        if (normalizedText.includes(normalizeTurkish(word))) score += value;
-    });
-    Object.entries(negativeKeywords).forEach(([word, value]) => {
-        if (normalizedText.includes(normalizeTurkish(word))) score += value;
+    const negationWords = new Set(['değil', 'değilim', 'yok', 'olmaması', 'olmuyor', 'yapmıyor', 'etmiyor', 'hiçbir', 'asla']);
+    const intensifiers: { [key: string]: number } = { 'çok': 1.8, 'aşırı': 2.0, 'fazla': 1.5, 'oldukça': 1.5, 'gerçekten': 1.5, 'hiç': 2.0 };
+    const diminishers: { [key: string]: number } = { 'biraz': 0.6, 'pek': 0.7, 'az': 0.5 };
+
+    let textScore = 0;
+    const words = normalizedText.split(/\s+/);
+
+    words.forEach((word, i) => {
+        let baseScore = 0;
+        let isPositive = false;
+
+        if (positiveKeywords[word]) {
+            baseScore = positiveKeywords[word];
+            isPositive = true;
+        } else if (negativeKeywords[word]) {
+            baseScore = negativeKeywords[word];
+        }
+
+        if (baseScore > 0) {
+            let multiplier = 1;
+            const prevWord = i > 0 ? words[i - 1] : null;
+
+            if (prevWord) {
+                if (negationWords.has(prevWord)) {
+                    multiplier *= -1.5;
+                }
+                if (intensifiers[prevWord]) {
+                    multiplier *= intensifiers[prevWord];
+                }
+                if (diminishers[prevWord]) {
+                    multiplier *= diminishers[prevWord];
+                }
+            }
+            textScore += (isPositive ? baseScore : -baseScore) * multiplier;
+        }
     });
 
-    if (score <= -3) return 'negative';
-    if (score >= 3) return 'positive';
+    const ratingScore = (rating - 3) * 2;
+    const totalScore = textScore + ratingScore;
 
-    const ratingSentiment = rating > 3 ? 'positive' : rating < 3 ? 'negative' : 'neutral';
-    
-    if (score < 0 && ratingSentiment === 'positive') {
+    if (Math.abs(textScore) > 3.5) {
+        if (textScore > 0) return 'positive';
         return 'negative';
     }
 
-    return ratingSentiment;
+    if (totalScore > 1.0) return 'positive';
+    if (totalScore < -1.0) return 'negative';
+    return 'neutral';
 };
 
 interface DataContextType {
@@ -420,6 +467,9 @@ interface DataContextType {
     weekFilterOptions: WeekFilterOption[];
     monthFilterOptions: MonthFilterOption[];
     aiAnalyses: AIAnalysisState;
+    notifications: Notification[];
+    storeInterviews: StoreInterview[];
+    exitInterviews: ExitInterview[];
     login: (email: string, pass: string) => boolean;
     logout: () => void;
     signUp: (details: Omit<User, 'id' | 'role' | 'status'>) => Promise<void>;
@@ -438,11 +488,17 @@ interface DataContextType {
     toggleReactionOnAction: (commentId: string, actionIndex: number, emoji: string) => void;
     deleteCommentAction: (commentId: string, actionIndex: number) => void;
     editCommentAction: (commentId:string, actionIndex: number, newText: string) => void;
+    markNotificationAsRead: (notificationId: string) => void;
+    markAllNotificationsAsRead: () => void;
+    addStoreInterview: (interview: Omit<StoreInterview, 'id' | 'timestamp'>) => void;
+    addExitInterview: (interview: Omit<ExitInterview, 'id' | 'timestamp'>) => void;
     generateSummary: (storeData: StoreData[], comments: Comment[]) => void;
     generateFocus: (storeData: StoreData[], comments: Comment[]) => void;
     generateTurnoverRisk: (storeData: StoreData[], comments: Comment[]) => void;
     generateSuccess: (storeData: StoreData[], comments: Comment[]) => void;
     generateAnomalies: (storeData: StoreData[], comments: Comment[]) => void;
+    generateRiskRadar: (storeData: StoreData[], comments: Comment[]) => void;
+    generateActionAnalysis: (storeData: StoreData[], comments: Comment[]) => void;
     getStoreById: (storeId: string) => StoreData | undefined;
     getCommentsForStore: (storeName: string) => Comment[];
 }
@@ -475,6 +531,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const [feedbackFileHistory, setFeedbackFileHistory] = useState<UploadedFile[]>([]);
     const [turnoverFileHistory, setTurnoverFileHistory] = useState<UploadedFile[]>([]);
+    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [storeInterviews, setStoreInterviews] = useState<StoreInterview[]>([]);
+    const [exitInterviews, setExitInterviews] = useState<ExitInterview[]>([]);
 
     const [loading, setLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -486,12 +545,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [passwordResetTokens, setPasswordResetTokens] = useState<Map<string, { email: string, expires: number }>>(new Map());
 
 
+    // FIX: Added 'riskRadar' and 'actionAnalysis' to match the AIAnalysisState type.
     const initialAIState: AIAnalysisState = {
         summary: { result: null, loading: false, error: null, fingerprint: null },
         focus: { result: null, loading: false, error: null, fingerprint: null },
         turnover: { result: null, loading: false, error: null, fingerprint: null },
         success: { result: null, loading: false, error: null, fingerprint: null },
         anomalies: { result: null, loading: false, error: null, fingerprint: null },
+        riskRadar: { result: null, loading: false, error: null, fingerprint: null },
+        actionAnalysis: { result: null, loading: false, error: null, fingerprint: null },
     };
     const [aiAnalyses, setAiAnalyses] = useState<AIAnalysisState>(initialAIState);
 
@@ -517,6 +579,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const savedTurnoverData = localStorage.getItem('turnoverData');
             const savedFeedbackHistory = localStorage.getItem('feedbackFileHistory');
             const savedTurnoverHistory = localStorage.getItem('turnoverFileHistory');
+            const savedNotifications = localStorage.getItem('notifications');
+            const savedInterviews = localStorage.getItem('storeInterviews');
+            const savedExitInterviews = localStorage.getItem('exitInterviews');
 
             setAllComments(savedComments ? JSON.parse(savedComments) : mockComments);
             setAllStoreData(savedStoreData ? JSON.parse(savedStoreData) : mockStoreData);
@@ -537,6 +602,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
             setFeedbackFileHistory(savedFeedbackHistory ? JSON.parse(savedFeedbackHistory) : []);
             setTurnoverFileHistory(savedTurnoverHistory ? JSON.parse(savedTurnoverHistory) : []);
+            setNotifications(savedNotifications ? JSON.parse(savedNotifications) : []);
+            setStoreInterviews(savedInterviews ? JSON.parse(savedInterviews) : []);
+            setExitInterviews(savedExitInterviews ? JSON.parse(savedExitInterviews) : []);
 
         } catch (err) {
             console.error("Failed to load data from storage", err);
@@ -564,45 +632,50 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 filteredStores = allStoreData;
                 filteredComments = allComments;
             } else if (currentUser.role === 'Satış Operasyon Müdürü') {
-                let managedManagers: Set<string> | undefined;
-                const normalizedCurrentUserName = normalizeTurkish(currentUser.name);
-
-                // Case-insensitive lookup for the SOM
+                // FIX: Refactored SOM filtering to be more robust by creating a normalized lookup map.
+                // This resolves the issue where a SOM would see no data due to name mismatches.
+                const managersBySomNormalized = new Map<string, Set<string>>();
                 for (const [somName, managersSet] of somToManagersMap.entries()) {
-                    if (normalizeTurkish(somName) === normalizedCurrentUserName) {
-                        managedManagers = managersSet;
-                        break;
-                    }
+                    managersBySomNormalized.set(normalizeTurkish(somName), managersSet);
                 }
-
+                
+                const normalizedCurrentUserName = normalizeTurkish(currentUser.name);
+                const managedManagers = managersBySomNormalized.get(normalizedCurrentUserName);
+            
                 if (managedManagers && managedManagers.size > 0) {
                     const managedStores = new Set<string>();
-                    // Normalize the names of managers managed by the SOM for comparison
                     const normalizedManagedManagers = new Set(Array.from(managedManagers).map(m => normalizeTurkish(m)));
-
+            
                     for (const [store, manager] of storeManagerMap.entries()) {
-                        // Check if the store's manager (normalized) is in the set of managed managers
                         if (normalizedManagedManagers.has(normalizeTurkish(manager))) {
                             managedStores.add(store);
                         }
                     }
+                    
                     if (managedStores.size > 0) {
                         filteredStores = allStoreData.filter(store => managedStores.has(store.name));
                         filteredComments = allComments.filter(comment => managedStores.has(comment.store));
                     }
                 }
             } else if (currentUser.role === 'Bölge Müdürü') {
-                const managedStores = new Set<string>();
-                const normalizedCurrentUserName = normalizeTurkish(currentUser.name);
+                // FIX: Refactored BM filtering to be more robust by pre-indexing stores by manager.
+                // This resolves the issue where a BM would see no data.
+                const storesByManager = new Map<string, string[]>();
                 for (const [store, manager] of storeManagerMap.entries()) {
-                    // Case-insensitive comparison for the BM
-                    if (normalizeTurkish(manager) === normalizedCurrentUserName) {
-                        managedStores.add(store);
+                    const normalizedManager = normalizeTurkish(manager);
+                    if (!storesByManager.has(normalizedManager)) {
+                        storesByManager.set(normalizedManager, []);
                     }
+                    storesByManager.get(normalizedManager)!.push(store);
                 }
-                if (managedStores.size > 0) {
-                    filteredStores = allStoreData.filter(store => managedStores.has(store.name));
-                    filteredComments = allComments.filter(comment => managedStores.has(comment.store));
+            
+                const normalizedCurrentUserName = normalizeTurkish(currentUser.name);
+                const managedStoresList = storesByManager.get(normalizedCurrentUserName);
+                
+                if (managedStoresList && managedStoresList.length > 0) {
+                    const managedStoresSet = new Set(managedStoresList);
+                    filteredStores = allStoreData.filter(store => managedStoresSet.has(store.name));
+                    filteredComments = allComments.filter(comment => managedStoresSet.has(comment.store));
                 }
             }
         }
@@ -841,6 +914,48 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAllComments(updatedComments);
         localStorage.setItem('comments', JSON.stringify(updatedComments));
     }, [allComments]);
+    
+    const markNotificationAsRead = useCallback((notificationId: string) => {
+        setNotifications(prev => {
+            const newNotifications = prev.map(n => (n.id === notificationId ? { ...n, isRead: true } : n));
+            localStorage.setItem('notifications', JSON.stringify(newNotifications));
+            return newNotifications;
+        });
+    }, []);
+
+    const markAllNotificationsAsRead = useCallback(() => {
+        setNotifications(prev => {
+            const newNotifications = prev.map(n => ({ ...n, isRead: true }));
+            localStorage.setItem('notifications', JSON.stringify(newNotifications));
+            return newNotifications;
+        });
+    }, []);
+
+    const addStoreInterview = useCallback((interview: Omit<StoreInterview, 'id' | 'timestamp'>) => {
+        const newInterview: StoreInterview = {
+            ...interview,
+            id: Math.random().toString(36).substr(2, 9),
+            timestamp: new Date().toISOString()
+        };
+        setStoreInterviews(prev => {
+            const updated = [newInterview, ...prev];
+            localStorage.setItem('storeInterviews', JSON.stringify(updated));
+            return updated;
+        });
+    }, []);
+
+    const addExitInterview = useCallback((interview: Omit<ExitInterview, 'id' | 'timestamp'>) => {
+        const newInterview: ExitInterview = {
+            ...interview,
+            id: Math.random().toString(36).substr(2, 9),
+            timestamp: new Date().toISOString()
+        };
+        setExitInterviews(prev => {
+            const updated = [newInterview, ...prev];
+            localStorage.setItem('exitInterviews', JSON.stringify(updated));
+            return updated;
+        });
+    }, []);
 
     const profileImageUrl = currentUser ? userProfileImages[currentUser.id] || null : null;
 
@@ -1114,7 +1229,33 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
             });
 
             const jsonStr = response.text.trim();
-            const parsedAnalysis = JSON.parse(jsonStr);
+            const parsedAnalysis = JSON.parse(jsonStr) as TurnoverRiskAnalysis;
+
+            if (parsedAnalysis.highRiskStores && parsedAnalysis.highRiskStores.length > 0) {
+                const newNotifications: Notification[] = parsedAnalysis.highRiskStores
+                    .filter(store => store.riskLevel === 'Yüksek' || store.riskLevel === 'Çok Yüksek')
+                    .map(risk => {
+                        const store = allStoreData.find(s => s.name === risk.storeName);
+                        return {
+                            id: `notif-${Date.now()}-${Math.random()}`,
+                            type: 'high_turnover_risk',
+                            message: `${risk.storeName} mağazasında ${risk.riskLevel.toLowerCase()} turnover riski tespit edildi.`,
+                            storeId: store?.id || '',
+                            storeName: risk.storeName,
+                            isRead: false,
+                            timestamp: new Date().toISOString(),
+                        };
+                    });
+                
+                setNotifications(prev => {
+                    const existingMessages = new Set(prev.map(n => n.message));
+                    const uniqueNewNotifications = newNotifications.filter(n => !existingMessages.has(n.message));
+                    const combined = [...uniqueNewNotifications, ...prev].slice(0, 20);
+                    localStorage.setItem('notifications', JSON.stringify(combined));
+                    return combined;
+                });
+            }
+
             setAiAnalyses(prev => {
                 if (prev.turnover.fingerprint === fingerprint) {
                     return { ...prev, turnover: { ...prev.turnover, result: parsedAnalysis, loading: false } };
@@ -1130,7 +1271,7 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
                 return prev;
             });
         }
-    }, []);
+    }, [allStoreData]);
     
     const generateSuccess = useCallback(async (storeData: StoreData[], comments: Comment[]) => {
         if (!process.env.API_KEY) {
@@ -1292,7 +1433,31 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
             });
             
             const jsonStr = response.text.trim();
-            const parsedAnalysis = JSON.parse(jsonStr);
+            const parsedAnalysis = JSON.parse(jsonStr) as AnomalyDetectionResponse;
+
+            if (parsedAnalysis.anomalies && parsedAnalysis.anomalies.length > 0) {
+                const newNotifications: Notification[] = parsedAnalysis.anomalies.map(anomaly => {
+                    const store = allStoreData.find(s => s.name === anomaly.storeName);
+                    return {
+                        id: `notif-${Date.now()}-${Math.random()}`,
+                        type: 'anomaly',
+                        message: anomaly.description,
+                        storeId: store?.id || '',
+                        storeName: anomaly.storeName,
+                        isRead: false,
+                        timestamp: new Date().toISOString(),
+                    };
+                });
+                
+                setNotifications(prev => {
+                    const existingMessages = new Set(prev.map(n => n.message));
+                    const uniqueNewNotifications = newNotifications.filter(n => !existingMessages.has(n.message));
+                    const combined = [...uniqueNewNotifications, ...prev].slice(0, 20);
+                    localStorage.setItem('notifications', JSON.stringify(combined));
+                    return combined;
+                });
+            }
+
             setAiAnalyses(prev => {
                 if (prev.anomalies.fingerprint === fingerprint) {
                     return { ...prev, anomalies: { ...prev.anomalies, result: parsedAnalysis, loading: false } };
@@ -1309,8 +1474,186 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
                 return prev;
             });
         }
+    }, [allStoreData]);
+
+    const generateRiskRadar = useCallback(async (storeData: StoreData[], comments: Comment[]) => {
+        if (!process.env.API_KEY) {
+            const error = "API anahtarı yapılandırılmadı.";
+            setAiAnalyses(prev => ({ ...prev, riskRadar: { result: null, loading: false, error, fingerprint: null } }));
+            return;
+        }
+        if (comments.length < 20) {
+            const error = "Risk radarı analizi için yeterli sayıda (en az 20) yorum bulunmamaktadır.";
+            setAiAnalyses(prev => ({ ...prev, riskRadar: { result: null, loading: false, error, fingerprint: 'no-data' } }));
+            return;
+        }
+
+        const fingerprint = createAnalysisFingerprint(storeData, comments);
+        setAiAnalyses(prev => ({ ...prev, riskRadar: { result: null, loading: true, error: null, fingerprint } }));
+
+        try {
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const prompt = `Bir proaktif İK risk analisti olarak, sana sunulan çalışan yorumlarını ve mağaza verilerini analiz ederek gelecekte ortaya çıkabilecek poteniyeal riskleri belirle.
+
+**Analiz Odak Alanları:**
+1.  **Düşen Performans Sinyalleri**: Motivasyon düşüklüğü, hedeflere ulaşamama, müşteri şikayetlerinde artış gibi dolaylı ifadeleri tespit et.
+2.  **Toksik Kültür İşaretleri**: Dedikodu, gruplaşma, saygısızlık, adaletsizlik ve güvensizlik gibi konuları içeren yorumları analiz et.
+3.  **Tükenmişlik Sinyalleri**: "Yorgunluk", "bitkinlik", "isteksizlik", "aşırı iş yükü", "fazla mesai" gibi ifadeleri içeren yorumları ve bunların yoğunlaştığı mağazaları belirle.
+
+**Veri Seti:**
+* **Yorum Verileri:** ${JSON.stringify(comments.map(c => ({ store: c.store, text: c.text, sentiment: c.sentiment })))}
+* **Mağaza Metrikleri:** ${JSON.stringify(storeData.map(s => ({ name: s.name, satisfaction: s.satisfaction })))}
+
+**İstenen Çıktı:**
+Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya açıklama eklemeden döndür.
+* \`summary\`: Tespit edilen en önemli riskleri ve genel eğilimi özetleyen 2-3 cümlelik bir genel bakış.
+* \`potentialRisks\`: Tespit ettiğin en önemli 3 potansiyel riski içeren bir dizi.
+    * \`storeName\`: Riskin en belirgin olduğu mağazanın adı.
+    * \`riskType\`: Riskin türü. Seçenekler: 'Düşen Performans', 'Toksik Kültür', 'Tükenmişlik Sinyalleri'.
+    * \`description\`: Riskin ne olduğunu ve potansiyel etkilerini açıklayan kısa bir cümle.
+    * \`evidence\`: Riski destekleyen, yorumlardan anonimleştirilmiş kısa ve çarpıcı bir alıntı.
+    * \`urgency\`: Riskin aciliyeti. Seçenekler: 'Yüksek', 'Orta'.`;
+    
+            const responseSchema = {
+                type: Type.OBJECT,
+                properties: {
+                    summary: { type: Type.STRING },
+                    potentialRisks: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                storeName: { type: Type.STRING },
+                                riskType: { type: Type.STRING },
+                                description: { type: Type.STRING },
+                                evidence: { type: Type.STRING },
+                                urgency: { type: Type.STRING },
+                            },
+                            required: ['storeName', 'riskType', 'description', 'evidence', 'urgency']
+                        }
+                    }
+                },
+                required: ['summary', 'potentialRisks']
+            };
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: responseSchema,
+                },
+            });
+            
+            const jsonStr = response.text.trim();
+            const parsedAnalysis = JSON.parse(jsonStr);
+            setAiAnalyses(prev => {
+                if (prev.riskRadar.fingerprint === fingerprint) {
+                    return { ...prev, riskRadar: { ...prev.riskRadar, result: parsedAnalysis, loading: false } };
+                }
+                return prev;
+            });
+    
+        } catch (err: any) {
+            const errorMessage = getApiErrorMessage(err);
+            setAiAnalyses(prev => {
+                if (prev.riskRadar.fingerprint === fingerprint) {
+                    return { ...prev, riskRadar: { ...prev.riskRadar, result: null, loading: false, error: errorMessage } };
+                }
+                return prev;
+            });
+        }
     }, []);
 
+    const generateActionAnalysis = useCallback(async (storeData: StoreData[], comments: Comment[]) => {
+        const commentsWithActions = comments.filter(c => c.actions && c.actions.length > 0);
+        if (!process.env.API_KEY) {
+            const error = "API anahtarı yapılandırılmadı.";
+            setAiAnalyses(prev => ({ ...prev, actionAnalysis: { result: null, loading: false, error, fingerprint: null } }));
+            return;
+        }
+        if (commentsWithActions.length < 3) {
+            const error = "Aksiyon analizi için yeterli sayıda (en az 3) aksiyon alınmış yorum bulunmamaktadır.";
+            setAiAnalyses(prev => ({ ...prev, actionAnalysis: { result: null, loading: false, error, fingerprint: 'no-data' } }));
+            return;
+        }
+    
+        const fingerprint = createAnalysisFingerprint(storeData, comments);
+        setAiAnalyses(prev => ({ ...prev, actionAnalysis: { result: null, loading: true, error: null, fingerprint } }));
+    
+        try {
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const prompt = `Bir İK stratejisti olarak, yöneticilerin çalışan yorumlarına yazdığı aksiyon notlarını ve bu aksiyonların ardından gelen ilgili yorumları analiz et. Amacın, alınan aksiyonların etkinliğini değerlendirmektir.
+
+**Analiz Süreci:**
+1.  **Aksiyon ve Sonrası**: Bir mağazada belirli bir konu hakkında olumsuz bir yoruma aksiyon alındıktan sonra, aynı konuyla ilgili sonraki yorumların duygu değişimini (pozitif, negatif, nötr) incele.
+2.  **Etkinliği Değerlendir**: Aksiyonun sorunu çözüp çözmediğini, durumu iyileştirip iyileştirmediğini veya etkisiz kalıp kalmadığını belirle.
+3.  **Kanıt Sun**: Değerlendirmeni desteklemek için aksiyon sonrası gelen yorumlardan bir örnek alıntı yap.
+
+**Veri Seti:**
+* **Aksiyon Alınmış Yorumlar ve Aksiyonlar:** ${JSON.stringify(commentsWithActions.map(c => ({ store: c.store, original_comment: c.text, category: c.category, date: c.date, actions: c.actions?.map(a => a.text) })))}
+* **Tüm Yorumlar (Bağlam için):** ${JSON.stringify(comments.map(c => ({ store: c.store, text: c.text, sentiment: c.sentiment, date: c.date })))}
+
+**İstenen Çıktı:**
+Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya açıklama eklemeden döndür.
+* \`summary\`: Alınan aksiyonların genel etkinliği ve öne çıkan trendler hakkında 2-3 cümlelik bir yönetici özeti.
+* \`analyzedActions\`: Analiz edilen en aydınlatıcı 3 aksiyonu içeren bir dizi.
+    * \`storeName\`: Aksiyonun alındığı mağazanın adı.
+    * \`topic\`: Aksiyonun ilgili olduğu konu (örn: 'Personel Eksikliği', 'Yönetici İletişimi').
+    * \`actionTaken\`: Yöneticinin aldığı aksiyonun kısa bir özeti.
+    * \`analysis\`: Aksiyonun sonucu. Seçenekler: 'Pozitif Değişim', 'Negatif Değişim', 'Değişim Gözlenmedi'.
+    * \`evidence\`: Analizi destekleyen, aksiyon sonrası gelen bir yorumdan kısa, anonim bir alıntı.`;
+    
+            const responseSchema = {
+                type: Type.OBJECT,
+                properties: {
+                    summary: { type: Type.STRING },
+                    analyzedActions: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                storeName: { type: Type.STRING },
+                                topic: { type: Type.STRING },
+                                actionTaken: { type: Type.STRING },
+                                analysis: { type: Type.STRING },
+                                evidence: { type: Type.STRING },
+                            },
+                            required: ['storeName', 'topic', 'actionTaken', 'analysis', 'evidence']
+                        }
+                    }
+                },
+                required: ['summary', 'analyzedActions']
+            };
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: responseSchema,
+                },
+            });
+            
+            const jsonStr = response.text.trim();
+            const parsedAnalysis = JSON.parse(jsonStr);
+            setAiAnalyses(prev => {
+                if (prev.actionAnalysis.fingerprint === fingerprint) {
+                    return { ...prev, actionAnalysis: { ...prev.actionAnalysis, result: parsedAnalysis, loading: false } };
+                }
+                return prev;
+            });
+    
+        } catch (err: any) {
+            const errorMessage = getApiErrorMessage(err);
+            setAiAnalyses(prev => {
+                if (prev.actionAnalysis.fingerprint === fingerprint) {
+                    return { ...prev, actionAnalysis: { ...prev.actionAnalysis, result: null, loading: false, error: errorMessage } };
+                }
+                return prev;
+            });
+        }
+    }, []);
     
      const uploadData = useCallback(async (jsonDataFromSheet: any[][], file: File) => {
         setIsProcessing(true);
@@ -1450,10 +1793,14 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
             const canonicalSomNames = new Map<string, string>();
             
             for (const manager of new Set(storeManagerMap.values())) {
-                canonicalManagerNames.set(normalizeTurkish(manager), manager);
+                if (typeof manager === 'string') {
+                    canonicalManagerNames.set(normalizeTurkish(manager), manager);
+                }
             }
             for (const som of new Set(storeSomMap.values())) {
-                canonicalSomNames.set(normalizeTurkish(som), som);
+                if (typeof som === 'string') {
+                    canonicalSomNames.set(normalizeTurkish(som), som);
+                }
             }
 
             const newComments = validRows.map((row, index) => {
@@ -1512,7 +1859,7 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
                     uploadId: uploadId,
                     date: parsedDate ? parsedDate.toISOString().split('T')[0] : '1970-01-01',
                     store: storeName,
-                    category: categorizeCommentV2(text, sentiment),
+                    category: categorizeComment(text, sentiment),
                     text: text,
                     sentiment,
                     rating: ratingValue,
@@ -1551,10 +1898,9 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
             localStorage.setItem('feedbackFileHistory', JSON.stringify(updatedHistory));
 
 
-        } catch (err: unknown) {
+        } catch (err: any) {
             console.error("Upload processing failed:", err);
-            // FIX: The error variable 'err' is of type 'unknown' and cannot be directly assigned to a string. It must first be converted to a string.
-            const message = err instanceof Error ? err.message : String(err);
+            const message = err.message || 'Dosya işlenirken bir hata oluştu.';
             setError(message);
             throw new Error(message);
         } finally {
@@ -1650,10 +1996,9 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
             localStorage.setItem('turnoverFileHistory', JSON.stringify(updatedHistory));
 
 
-        } catch (err: unknown) {
+        } catch (err: any) {
             console.error("Turnover upload failed:", err);
-            // FIX: The error variable 'err' is of type 'unknown' and cannot be directly assigned to a string. It must first be converted to a string.
-            const message = err instanceof Error ? err.message : String(err);
+            const message = err.message || 'Dosya işlenirken bir hata oluştu.';
             setError(message);
             throw new Error(message);
         } finally {
@@ -1663,34 +2008,33 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
     }, [allComments, allTurnoverData, turnoverFileHistory]);
     
     const deleteFeedbackFile = useCallback((fileId: string) => {
-        if (!window.confirm("Bu dosyayı ve içerdiği tüm yorumları kalıcı olarak silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.")) {
-            return;
-        }
         setIsProcessing(true);
         setProcessingMessage('Geri bildirim verileri siliniyor...');
 
-        setTimeout(() => {
-            try {
-                const updatedHistory = feedbackFileHistory.filter(f => f.id !== fileId);
-                const updatedComments = allComments.filter(c => c.uploadId !== fileId);
-                
-                const newProcessedStores = processAllData(updatedComments, allTurnoverData);
-                
-                setFeedbackFileHistory(updatedHistory);
-                setAllComments(updatedComments);
-                setAllStoreData(newProcessedStores);
-                
-                localStorage.setItem('feedbackFileHistory', JSON.stringify(updatedHistory));
-                localStorage.setItem('comments', JSON.stringify(updatedComments));
-                localStorage.setItem('storeData', JSON.stringify(newProcessedStores));
-            } catch(e) {
-                console.error("Failed to delete feedback file:", e);
-                setError("Geri bildirim dosyası silinirken bir hata oluştu.");
-            } finally {
-                setIsProcessing(false);
-                setProcessingMessage('');
-            }
-        }, 10);
+        try {
+            const updatedHistory = feedbackFileHistory.filter(f => f.id !== fileId);
+            const updatedComments = allComments.filter(c => c.uploadId !== fileId);
+            
+            const newProcessedStores = processAllData(updatedComments, allTurnoverData);
+            
+            setFeedbackFileHistory(updatedHistory);
+            setAllComments(updatedComments);
+            setAllStoreData(newProcessedStores);
+            
+            localStorage.setItem('feedbackFileHistory', JSON.stringify(updatedHistory));
+            localStorage.setItem('comments', JSON.stringify(updatedComments));
+            localStorage.setItem('storeData', JSON.stringify(newProcessedStores));
+        } catch (error) {
+            // FIX: Handle 'unknown' type in catch block for type safety by converting the error to a string.
+            console.error("Failed to delete feedback file:", error);
+            // FIX: The 'error' variable in a catch block is of type 'unknown'. It must be converted to a string before being used.
+            const message = error instanceof Error ? error.message : String(error);
+            setError(message);
+            alert(`Dosya silinirken bir hata oluştu: ${message}`);
+        } finally {
+            setIsProcessing(false);
+            setProcessingMessage('');
+        }
     }, [allComments, allTurnoverData, feedbackFileHistory]);
 
     const reprocessTurnoverFiles = useCallback((files: UploadedFile[]): { turnoverMap: Map<string, TurnoverData> } => {
@@ -1761,34 +2105,33 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
     }, []);
 
     const deleteTurnoverFile = useCallback((fileId: string) => {
-        if (!window.confirm("Bu dosyayı ve içerdiği turnover verilerini kalıcı olarak silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.")) {
-            return;
-        }
         setIsProcessing(true);
         setProcessingMessage('Turnover verileri yeniden hesaplanıyor...');
         
-        setTimeout(() => {
-            try {
-                const updatedHistory = turnoverFileHistory.filter(f => f.id !== fileId);
-                const { turnoverMap: newTurnoverData } = reprocessTurnoverFiles(updatedHistory);
-                
-                const updatedStoreData = processAllData(allComments, newTurnoverData);
+        try {
+            const updatedHistory = turnoverFileHistory.filter(f => f.id !== fileId);
+            const { turnoverMap: newTurnoverData } = reprocessTurnoverFiles(updatedHistory);
+            
+            const updatedStoreData = processAllData(allComments, newTurnoverData);
 
-                setTurnoverFileHistory(updatedHistory);
-                setAllTurnoverData(newTurnoverData);
-                setAllStoreData(updatedStoreData);
-                
-                localStorage.setItem('turnoverFileHistory', JSON.stringify(updatedHistory));
-                localStorage.setItem('turnoverData', JSON.stringify(Array.from(newTurnoverData.entries())));
-                localStorage.setItem('storeData', JSON.stringify(updatedStoreData));
-            } catch (e) {
-                console.error("Failed to delete turnover file:", e);
-                setError("Turnover dosyası silinirken bir hata oluştu.");
-            } finally {
-                setIsProcessing(false);
-                setProcessingMessage('');
-            }
-        }, 10);
+            setTurnoverFileHistory(updatedHistory);
+            setAllTurnoverData(newTurnoverData);
+            setAllStoreData(updatedStoreData);
+            
+            localStorage.setItem('turnoverFileHistory', JSON.stringify(updatedHistory));
+            localStorage.setItem('turnoverData', JSON.stringify(Array.from(newTurnoverData.entries())));
+            localStorage.setItem('storeData', JSON.stringify(updatedStoreData));
+        } catch (error) {
+            // FIX: Handle 'unknown' type in catch block for type safety by converting the error to a string.
+            console.error("Failed to delete turnover file:", error);
+            // FIX: The 'error' variable in a catch block is of type 'unknown'. It must be converted to a string before being used.
+            const message = error instanceof Error ? error.message : String(error);
+            setError(message);
+            alert(`Dosya silinirken bir hata oluştu: ${message}`);
+        } finally {
+            setIsProcessing(false);
+            setProcessingMessage('');
+        }
     }, [allComments, turnoverFileHistory, reprocessTurnoverFiles]);
     
     const value: DataContextType = {
@@ -1826,11 +2169,20 @@ Cevabını, aşağıdaki JSON şemasına uygun olarak, başka hiçbir metin veya
         weekFilterOptions,
         monthFilterOptions,
         aiAnalyses,
+        notifications,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
+        storeInterviews,
+        addStoreInterview,
+        exitInterviews,
+        addExitInterview,
         generateSummary,
         generateFocus,
         generateTurnoverRisk,
         generateSuccess,
         generateAnomalies,
+        generateRiskRadar,
+        generateActionAnalysis,
         getStoreById,
         getCommentsForStore,
     };

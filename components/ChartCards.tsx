@@ -1,6 +1,6 @@
 // FIX: Created file content to provide chart components required by other pages.
 import React from 'react';
-import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, LineChart, Line } from 'recharts';
 import { ChartData } from '../types';
 
 interface ChartCardProps {
@@ -132,6 +132,63 @@ export const HorizontalBarChartCard: React.FC<ChartCardProps> = ({ title, value,
                             ))}
                         </Bar>
                     </BarChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
+};
+
+interface MultiLineChartCardProps {
+    title: string;
+    data: any[];
+    dataKeys: string[];
+    xAxisKey: string;
+    tooltipText?: string;
+    headerAddon?: React.ReactNode;
+}
+
+const lineColors = ['#00a99d', '#e5007e', '#ffc72c', '#3498DB', '#9B59B6'];
+
+export const MultiLineChartCard: React.FC<MultiLineChartCardProps> = ({ title, data, dataKeys, xAxisKey, tooltipText, headerAddon }) => {
+    return (
+        <div className="card chart-card">
+            {tooltipText && (
+                <div className="card-tooltip-container">
+                    <span className="material-symbols-outlined">help</span>
+                    <div className="card-tooltip">{tooltipText}</div>
+                </div>
+            )}
+            <div className="card-header">
+                <div>
+                    <h3 className="card-title">{title}</h3>
+                </div>
+                 {headerAddon}
+            </div>
+            <div className="chart-container" style={{ paddingLeft: '1rem' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+                        <XAxis dataKey={xAxisKey} tick={{ fill: 'var(--text-color-light)' }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fill: 'var(--text-color-light)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <Tooltip 
+                            contentStyle={{
+                                backgroundColor: 'var(--card-bg-color)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 'var(--border-radius)',
+                            }}
+                        />
+                        <Legend />
+                        {dataKeys.map((key, index) => (
+                            <Line 
+                                key={key}
+                                type="monotone" 
+                                dataKey={key} 
+                                stroke={lineColors[index % lineColors.length]} 
+                                strokeWidth={3} 
+                                activeDot={{ r: 8 }} 
+                            />
+                        ))}
+                    </LineChart>
                 </ResponsiveContainer>
             </div>
         </div>

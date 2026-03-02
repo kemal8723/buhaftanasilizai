@@ -11,6 +11,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen }) => {
     const { currentUser } = useData();
     
     const canViewAnalysisPages = currentUser && !['Bölge Müdürü', 'Satış Operasyon Müdürü'].includes(currentUser.role);
+    const isHR = currentUser && (currentUser.role === 'İnsan Kaynakları' || currentUser.role === 'Direktör');
 
     return (
         <aside className={`sidebar ${!isOpen ? 'collapsed' : ''}`}>
@@ -47,8 +48,24 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen }) => {
                         <span>Bölge Analizi</span>
                     </NavLink>
                 )}
+                {isHR && (
+                    <>
+                        <NavLink to="/exit-interview" className="sidebar-nav-link" title="Çıkış Mülakatı">
+                            <span className="material-symbols-outlined sidebar-nav-icon">logout</span>
+                            <span>Çıkış Mülakatı</span>
+                        </NavLink>
+                        <NavLink to="/store-interview" className="sidebar-nav-link" title="Mağaza Görüşme Formu">
+                            <span className="material-symbols-outlined sidebar-nav-icon">assignment</span>
+                            <span>Görüşme Formu</span>
+                        </NavLink>
+                    </>
+                )}
             </nav>
             <div className="sidebar-footer">
+                 <NavLink to="/guide" className="sidebar-nav-link" title="Kullanım Kılavuzu">
+                    <span className="material-symbols-outlined sidebar-nav-icon">menu_book</span>
+                    <span>Kullanım Kılavuzu</span>
+                </NavLink>
                 <NavLink to="/settings" className="sidebar-nav-link" title="Ayarlar">
                     <span className="material-symbols-outlined sidebar-nav-icon">settings</span>
                     <span>Ayarlar</span>

@@ -1,12 +1,12 @@
-
 import React, { useMemo, useState } from 'react';
 import MainLayout from '../components/MainLayout';
 import { useData } from '../DataContext';
-import { AreaChartCard, HorizontalBarChartCard } from '../components/ChartCards';
+import { AreaChartCard, HorizontalBarChartCard, MultiLineChartCard } from '../components/ChartCards';
 import AIInsightsCard from '../components/AIInsightsCard';
 import StatCard from '../components/StatCard';
 import { Link } from 'react-router-dom';
 import { ChartData, Comment, StoreData } from '../types';
+import PerformanceKPICard from '../components/PerformanceKPICard';
 
 // --- START: Local Type Definitions for Dashboard Metrics ---
 interface HistoryAndMetrics {
@@ -109,7 +109,7 @@ const calculateHistory = (
                 const monthIndex = parseInt(key.split('-')[1]) - 1; 
                 name = shortMonthNames[monthIndex];
             } else {
-                name = `H${key.split('-W')[1]}`;
+                name = `W${key.split('-W')[1]}`;
             }
             return {
                 name,
@@ -127,7 +127,12 @@ const calculateAllDashboardMetrics = (comments: Comment[]): DashboardChartMetric
         actionRate: { monthly: initialHistoryAndMetrics, weekly: initialHistoryAndMetrics },
     };
 
-    const satisfactionCalc = (group: Comment[]) => group.length > 0 ? (group.filter(c => c.sentiment === 'positive').length / group.length) * 100 : 0;
+    const satisfactionCalc = (group: Comment[]) => {
+        const commentsWithRating = group.filter(c => typeof c.rating === 'number' && c.rating >= 1 && c.rating <= 5);
+        if (commentsWithRating.length === 0) return 0;
+        const averageRating = commentsWithRating.reduce((sum, c) => sum + c.rating!, 0) / commentsWithRating.length;
+        return averageRating;
+    };
     const feedbackCountCalc = (group: Comment[]) => group.length;
     const activeStoresCalc = (group: Comment[]) => new Set(group.map(c => c.store)).size;
     const actionRateCalc = (group: Comment[]) => {
@@ -157,6 +162,60 @@ const calculateAllDashboardMetrics = (comments: Comment[]): DashboardChartMetric
     };
 };
 
+const calculateCategoryTrends = (comments: Comment[]): { trendData: any[], categories: string[] } => {
+    if (!comments || comments.length === 0) return { trendData: [], categories: [] };
+    
+    const trendsByMonth: { [key: string]: { [key: string]: number } } = {};
+    const shortMonthNames = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+    const allCategories = new Set<string>();
+
+    comments.forEach(comment => {
+        if (!comment.date || !comment.category) return;
+        try {
+            const date = new Date(comment.date);
+            if (isNaN(date.getTime())) return;
+            
+            const year = date.getFullYear();
+            const monthIndex = date.getMonth();
+            const key = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+            
+            if (!trendsByMonth[key]) {
+                trendsByMonth[key] = {};
+            }
+            
+            trendsByMonth[key][comment.category] = (trendsByMonth[key][comment.category] || 0) + 1;
+            allCategories.add(comment.category);
+        } catch { return; }
+    });
+
+    if (allCategories.size === 0) return { trendData: [], categories: [] };
+
+    const categoryTotals = Array.from(allCategories).map(cat => {
+        const total = Object.values(trendsByMonth).reduce((sum, monthData) => sum + (monthData[cat] || 0), 0);
+        return { name: cat, total };
+    }).sort((a,b) => b.total - a.total).slice(0, 5);
+    
+    const topCategories = categoryTotals.map(c => c.name);
+
+    const trendData = Object.keys(trendsByMonth)
+        .sort()
+        .map(key => {
+            const monthIndex = parseInt(key.split('-')[1]) - 1; 
+            const name = shortMonthNames[monthIndex];
+            const monthData = trendsByMonth[key];
+            
+            const row: { [key: string]: any } = { name };
+            topCategories.forEach(cat => {
+                row[cat] = monthData[cat] || 0;
+            });
+            
+            return row;
+        });
+
+    return { trendData, categories: topCategories };
+};
+
+
 // --- END: DASHBOARD METRIC CALCULATION LOGIC ---
 
 // --- START: RENDER HELPER FUNCTIONS (MOVED OUTSIDE COMPONENT) ---
@@ -165,12 +224,12 @@ const renderChange = (change: number, options: { unit?: string; isInteger?: bool
     if (isNaN(change) || !isFinite(change)) return null;
     
     const sign = change > 0 ? '+' : '';
-    const value = Math.abs(change).toFixed(isInteger ? 0 : 1);
+    const value = Math.abs(change).toFixed(isInteger ? 0 : 2).replace('.', ',');
 
-    if (parseFloat(value) === 0) {
-        return isInteger ? `0${unit}` : `0.0${unit}`;
+    if (parseFloat(value.replace(',', '.')) === 0) {
+        return isInteger ? `0${unit}` : `0,00${unit}`;
     }
-    return `${sign}${isInteger ? parseInt(value, 10) : value}${unit}`;
+    return `${sign}${value}${unit}`;
 };
 
 const renderTurnoverCell = (rate: number | undefined) => {
@@ -180,6 +239,12 @@ const renderTurnoverCell = (rate: number | undefined) => {
     return (
         <span>{rate.toLocaleString('tr-TR')}%</span>
     );
+};
+
+const getSatisfactionBarClass = (satisfaction: number) => {
+    if (satisfaction >= 4.0) return 'satisfaction-bar-high';
+    if (satisfaction >= 3.0) return 'satisfaction-bar-medium';
+    return 'satisfaction-bar-low';
 };
 
 
@@ -215,6 +280,8 @@ const DashboardPage: React.FC = () => {
     const sentimentChartData = useMemo(() => calculateSentimentDistribution(somFilteredComments), [somFilteredComments]);
     const dashboardChartMetrics = useMemo(() => calculateAllDashboardMetrics(somFilteredComments), [somFilteredComments]);
     
+    const { trendData: categoryTrendData, categories: categoryKeys } = useMemo(() => calculateCategoryTrends(somFilteredComments), [somFilteredComments]);
+
     const totalSentimentComments = sentimentChartData.reduce((sum, item) => sum + item.value, 0);
     const primarySentiment = sentimentChartData.length > 0 ? sentimentChartData[0] : { name: 'Veri Yok', value: 0 };
     
@@ -271,8 +338,8 @@ const DashboardPage: React.FC = () => {
                 <div className="dashboard-grid-2col">
                     <AreaChartCard 
                         title="Genel Memnuniyet Trendi"
-                        value={`${satisfactionMetrics.current.toFixed(0)}%`}
-                        change={renderChange(satisfactionMetrics.change, { unit: '%' })}
+                        value={`${satisfactionMetrics.current.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 5`}
+                        change={renderChange(satisfactionMetrics.change)}
                         changeType={satisfactionMetrics.change >= 0 ? 'positive' : 'negative'}
                         data={satisfactionMetrics.history}
                         headerAddon={
@@ -281,16 +348,9 @@ const DashboardPage: React.FC = () => {
                                 <button onClick={() => setSatisfactionPeriod('weekly')} className={`chart-filter-btn ${satisfactionPeriod === 'weekly' ? 'active' : ''}`}>Haftalık</button>
                             </div>
                         }
-                        tooltipText="Bu grafik, seçilen zaman dilimine (aylık veya haftalık) göre genel çalışan memnuniyet oranının değişimini gösterir. Yüzde, olumlu geri bildirimlerin toplam geri bildirimlere oranını temsil eder."
+                        tooltipText="Bu grafik, çalışanların verdiği 1-5 arası puanların ortalamasını gösterir. Zaman içindeki memnuniyet değişimini yansıtır."
                     />
-                    <HorizontalBarChartCard
-                        title="Genel Duygu Dağılımı"
-                        value={`${totalSentimentComments} Geri Bildirim`}
-                        subtitle={primarySentiment.value > 0 ? `En Yaygın: ${primarySentiment.name} (${primarySentiment.value})` : ''}
-                        data={sentimentChartData}
-                        totalValue={totalSentimentComments}
-                        tooltipText="Filtrelenmiş geri bildirimlerin duyguya göre dağılımını gösterir."
-                   />
+                    <PerformanceKPICard />
                 </div>
 
                 <div className="section">
@@ -332,6 +392,24 @@ const DashboardPage: React.FC = () => {
                      </div>
                 </div>
 
+                <div className="dashboard-grid-2col">
+                    <MultiLineChartCard
+                        title="Aylık Geri Bildirim Kategori Trendleri"
+                        data={categoryTrendData}
+                        xAxisKey="name"
+                        dataKeys={categoryKeys}
+                        tooltipText="En sık karşılaşılan ilk 5 geri bildirim kategorisinin aylık değişimini gösterir. Bu, hangi konuların zaman içinde önem kazandığını veya azaldığını anlamanıza yardımcı olur."
+                    />
+                    <HorizontalBarChartCard
+                        title="Genel Duygu Dağılımı"
+                        value={`${totalSentimentComments} Geri Bildirim`}
+                        subtitle={primarySentiment.value > 0 ? `En Yaygın: ${primarySentiment.name} (${primarySentiment.value})` : ''}
+                        data={sentimentChartData}
+                        totalValue={totalSentimentComments}
+                        tooltipText="Filtrelenmiş geri bildirimlerin duyguya göre dağılımını gösterir."
+                   />
+                </div>
+
                 <div className="section">
                     <AIInsightsCard storeData={somFilteredStores} comments={somFilteredComments} />
                 </div>
@@ -357,9 +435,9 @@ const DashboardPage: React.FC = () => {
                                             <td><Link to={`/store/${store.id}`} style={{fontWeight: 600}}>{store.name}</Link></td>
                                             <td>
                                                 <div className="satisfaction-cell">
-                                                    <span className="satisfaction-value">{store.satisfaction}%</span>
+                                                    <span className="satisfaction-value">{store.satisfaction.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 5</span>
                                                     <div className="satisfaction-bar-container">
-                                                        <div className="satisfaction-bar satisfaction-bar-high" style={{ width: `${store.satisfaction}%` }}></div>
+                                                        <div className={`satisfaction-bar ${getSatisfactionBarClass(store.satisfaction)}`} style={{ width: `${(store.satisfaction / 5) * 100}%` }}></div>
                                                     </div>
                                                 </div>
                                             </td>
@@ -390,9 +468,9 @@ const DashboardPage: React.FC = () => {
                                             <td><Link to={`/store/${store.id}`} style={{fontWeight: 600}}>{store.name}</Link></td>
                                             <td>
                                                 <div className="satisfaction-cell">
-                                                    <span className="satisfaction-value">{store.satisfaction}%</span>
+                                                    <span className="satisfaction-value">{store.satisfaction.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 5</span>
                                                     <div className="satisfaction-bar-container">
-                                                        <div className={`satisfaction-bar ${store.satisfaction < 50 ? 'satisfaction-bar-low' : 'satisfaction-bar-medium'}`} style={{ width: `${store.satisfaction}%` }}></div>
+                                                        <div className={`satisfaction-bar ${getSatisfactionBarClass(store.satisfaction)}`} style={{ width: `${(store.satisfaction / 5) * 100}%` }}></div>
                                                     </div>
                                                 </div>
                                             </td>

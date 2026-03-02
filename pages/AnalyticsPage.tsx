@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import MainLayout from '../components/MainLayout';
 import { useData } from '../DataContext';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import AIInsightsCard from '../components/AIInsightsCard';
 import { Comment, TurnoverHistory, StoreData } from '../types';
 
 // Helper function to get week of year (local to this component)
@@ -148,8 +147,11 @@ const AnalyticsPage: React.FC = () => {
     const [selectedStore, setSelectedStore] = useState('Tümü');
     const [selectedMonth, setSelectedMonth] = useState('all');
     const [selectedWeek, setSelectedWeek] = useState('all');
-    // FIX: Removed state for interactive keyword filtering from the word cloud.
-    // const [keywordFilter, setKeywordFilter] = useState('');
+    
+    const [keyword, setKeyword] = useState('');
+    const [keywordTrendData, setKeywordTrendData] = useState<any[] | null>(null);
+    const [isTrendLoading, setIsTrendLoading] = useState(false);
+    const [trendError, setTrendError] = useState('');
     
     const canFilterBySom = currentUser && !['Bölge Müdürü', 'Satış Operasyon Müdürü'].includes(currentUser.role);
 
@@ -197,7 +199,6 @@ const AnalyticsPage: React.FC = () => {
             const storeMatch = selectedStore === 'Tümü' || comment.store === selectedStore;
             const monthMatch = selectedMonth === 'all' || comment.month === selectedMonth;
             const weekMatch = selectedWeek === 'all' || comment.week === selectedWeek;
-            // const keywordMatch = keywordFilter === '' || comment.text.toLowerCase().includes(keywordFilter.toLowerCase());
             return storeMatch && monthMatch && weekMatch;
         });
     }, [comments, availableStores, selectedStore, selectedMonth, selectedWeek]);
@@ -225,7 +226,37 @@ const AnalyticsPage: React.FC = () => {
         setSelectedStore('Tümü');
         setSelectedMonth('all');
         setSelectedWeek('all');
-        // setKeywordFilter('');
+    };
+
+    const handleAnalyzeKeyword = () => {
+        if (!keyword.trim()) {
+            setTrendError('Lütfen analiz için bir anahtar kelime girin.');
+            return;
+        }
+        setIsTrendLoading(true);
+        setTrendError('');
+        setKeywordTrendData(null);
+    
+        setTimeout(() => { 
+            try {
+                const lowerKeyword = keyword.trim().toLowerCase();
+                const keywordComments = filteredComments.filter(c => c.text.toLowerCase().includes(lowerKeyword));
+    
+                if(keywordComments.length === 0) {
+                    setKeywordTrendData([]); 
+                    setIsTrendLoading(false);
+                    return;
+                }
+    
+                const trendData = calculateSentimentTrends(keywordComments);
+                setKeywordTrendData(trendData);
+            } catch (e) {
+                console.error("Keyword trend analysis failed:", e);
+                setTrendError("Trend analizi sırasında bir hata oluştu.");
+            } finally {
+                setIsTrendLoading(false);
+            }
+        }, 500);
     };
 
     const filtersAreActive = selectedSom !== 'Tümü' || selectedManager !== 'Tümü' || selectedStore !== 'Tümü' || selectedMonth !== 'all' || selectedWeek !== 'all';
@@ -354,10 +385,64 @@ const AnalyticsPage: React.FC = () => {
                         </div>
                     )}
                 </div>
+                
+                 <div className="section">
+                    <div className="card" style={{height: 'auto'}}>
+                        <h3 className="section-title" style={{ marginBottom: '1.5rem' }}>Anahtar Kelime Duygu Trendi</h3>
+                        <div className="comment-filters" style={{marginBottom: '1.5rem'}}>
+                            <div className="filter-group" style={{flexGrow: 1}}>
+                                <label htmlFor="keyword-input">Analiz Edilecek Anahtar Kelime</label>
+                                <input
+                                    id="keyword-input"
+                                    type="text"
+                                    className="filter-select"
+                                    placeholder="Örn: maaş, yönetici, prim..."
+                                    value={keyword}
+                                    onChange={(e) => setKeyword(e.target.value)}
+                                    onKeyPress={(e) => {if (e.key === 'Enter') handleAnalyzeKeyword()}}
+                                />
+                            </div>
+                            <button onClick={handleAnalyzeKeyword} className="btn btn-primary" disabled={isTrendLoading} style={{height: '40px'}}>
+                                {isTrendLoading ? 'Analiz Ediliyor...' : 'Analiz Et'}
+                            </button>
+                        </div>
 
-                <div className="section section-centered-card">
-                    <AIInsightsCard defaultTab="focus" storeData={filteredStoreData} comments={filteredComments} />
+                        {trendError && <p className="error-message" style={{textAlign: 'center'}}>{trendError}</p>}
+                        
+                        <div style={{ height: '400px', width: '100%' }}>
+                            {isTrendLoading ? (
+                                <div className="loading-placeholder" style={{paddingTop: '2rem', display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%'}}>
+                                    <p>Yükleniyor...</p>
+                                </div>
+                            ) : keywordTrendData ? (
+                                keywordTrendData.length > 0 ? (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={keywordTrendData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+                                            <XAxis dataKey="name" tick={{ fill: 'var(--text-color-light)' }} axisLine={false} tickLine={false} />
+                                            <YAxis tick={{ fill: 'var(--text-color-light)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                                            <Tooltip contentStyle={{ backgroundColor: 'var(--card-bg-color)', border: '1px solid var(--border-color)', borderRadius: 'var(--border-radius)' }} />
+                                            <Legend wrapperStyle={{ color: 'var(--text-color)' }} />
+                                            <Line type="monotone" dataKey="olumlu" name="Olumlu" stroke="var(--success-color)" strokeWidth={3} activeDot={{ r: 8 }} />
+                                            <Line type="monotone" dataKey="olumsuz" name="Olumsuz" stroke="var(--error-color)" strokeWidth={3} activeDot={{ r: 8 }} />
+                                            <Line type="monotone" dataKey="notr" name="Nötr" stroke="var(--text-color-light)" strokeWidth={3} activeDot={{ r: 8 }} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div className="placeholder-card" style={{height: '100%', border: 'none'}}>
+                                        <p className="placeholder-text">"{keyword}" kelimesini içeren yorum bulunamadı.</p>
+                                    </div>
+                                )
+                            ) : (
+                                <div className="placeholder-card" style={{height: '100%', border: 'none'}}>
+                                     <span className="material-symbols-outlined placeholder-icon">search</span>
+                                    <p className="placeholder-text" style={{maxWidth: '45ch'}}>Belirli bir konunun zaman içindeki duygu değişimini görmek için bir anahtar kelime girip analizi başlatın.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
+
             </div>
         </MainLayout>
     );

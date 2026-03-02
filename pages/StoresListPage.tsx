@@ -7,9 +7,8 @@ import MainLayout from '../components/MainLayout';
 type SortableKeys = keyof Pick<StoreData, 'name' | 'satisfaction' | 'feedbackCount'> | 'manager';
 
 const getSatisfactionBarClass = (satisfaction: number) => {
-    if (satisfaction > 85) return 'satisfaction-bar-high';
-    if (satisfaction >= 70) return 'satisfaction-bar-high';
-    if (satisfaction >= 50) return 'satisfaction-bar-medium';
+    if (satisfaction >= 4.0) return 'satisfaction-bar-high';
+    if (satisfaction >= 3.0) return 'satisfaction-bar-medium';
     return 'satisfaction-bar-low';
 };
 
@@ -110,9 +109,9 @@ const StoresListPage: React.FC = () => {
             });
     
             const filteredFeedbackCount = relevantComments.length;
-            const positiveFilteredComments = relevantComments.filter(c => c.sentiment === 'positive').length;
-            const filteredSatisfaction = filteredFeedbackCount > 0
-                ? Math.round((positiveFilteredComments / filteredFeedbackCount) * 100)
+            const commentsWithRating = relevantComments.filter(c => typeof c.rating === 'number' && c.rating >= 1 && c.rating <= 5);
+            const filteredSatisfaction = commentsWithRating.length > 0
+                ? (commentsWithRating.reduce((sum, c) => sum + c.rating!, 0) / commentsWithRating.length)
                 : 0;
             
             return {
@@ -273,9 +272,9 @@ const StoresListPage: React.FC = () => {
                                         <td>
                                             <Link to={`/store/${store.id}`} tabIndex={-1} style={{display: 'block', padding: '1rem 1.5rem'}}>
                                                 <div className="satisfaction-cell">
-                                                    <span className="satisfaction-value">{store.satisfaction}%</span>
+                                                    <span className="satisfaction-value">{store.satisfaction.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 5</span>
                                                     <div className="satisfaction-bar-container">
-                                                        <div className={`satisfaction-bar ${getSatisfactionBarClass(store.satisfaction)}`} style={{ width: `${store.satisfaction}%` }}></div>
+                                                        <div className={`satisfaction-bar ${getSatisfactionBarClass(store.satisfaction)}`} style={{ width: `${(store.satisfaction / 5) * 100}%` }}></div>
                                                     </div>
                                                 </div>
                                             </Link>

@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import MainLayout from '../components/MainLayout';
 import { useData } from '../DataContext';
@@ -58,11 +57,11 @@ const PerformanceRankingCard: React.FC<{ title: string; data: PerformanceMetric[
                                 </td>
                                 <td>
                                     <div className="satisfaction-cell">
-                                        <span className="satisfaction-value">{item.satisfaction.toFixed(0)}%</span>
+                                        <span className="satisfaction-value">{item.satisfaction.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 5</span>
                                         <div className="satisfaction-bar-container">
                                             <div 
-                                                className={`satisfaction-bar ${item.satisfaction >= 70 ? 'satisfaction-bar-high' : item.satisfaction >= 50 ? 'satisfaction-bar-medium' : 'satisfaction-bar-low'}`} 
-                                                style={{ width: `${item.satisfaction}%` }}
+                                                className={`satisfaction-bar ${item.satisfaction >= 4.0 ? 'satisfaction-bar-high' : item.satisfaction >= 3.0 ? 'satisfaction-bar-medium' : 'satisfaction-bar-low'}`} 
+                                                style={{ width: `${(item.satisfaction / 5) * 100}%` }}
                                             ></div>
                                         </div>
                                     </div>
@@ -157,9 +156,9 @@ const RegionAnalysisPage: React.FC = () => {
     
     const somSatisfactionDistribution = useMemo(() => {
         const distribution = {
-            'Yüksek (>70%)': 0,
-            'Orta (50-69%)': 0,
-            'Düşük (<50%)': 0,
+            'Yüksek (4.0+)': 0,
+            'Orta (3.0-3.99)': 0,
+            'Düşük (<3.0)': 0,
         };
 
         const somPerformances = soms.map(som => {
@@ -170,12 +169,12 @@ const RegionAnalysisPage: React.FC = () => {
         }).filter((avg): avg is number => avg !== null);
 
         somPerformances.forEach(avg => {
-            if (avg >= 70) {
-                distribution['Yüksek (>70%)']++;
-            } else if (avg >= 50) {
-                distribution['Orta (50-69%)']++;
+            if (avg >= 4.0) {
+                distribution['Yüksek (4.0+)']++;
+            } else if (avg >= 3.0) {
+                distribution['Orta (3.0-3.99)']++;
             } else {
-                distribution['Düşük (<50%)']++;
+                distribution['Düşük (<3.0)']++;
             }
         });
 
@@ -186,9 +185,9 @@ const RegionAnalysisPage: React.FC = () => {
 
     const bmSatisfactionDistribution = useMemo(() => {
         const distribution = {
-            'Yüksek (>70%)': 0,
-            'Orta (50-69%)': 0,
-            'Düşük (<50%)': 0,
+            'Yüksek (4.0+)': 0,
+            'Orta (3.0-3.99)': 0,
+            'Düşük (<3.0)': 0,
         };
         
         const managerPerformances = managers.map(manager => {
@@ -199,12 +198,12 @@ const RegionAnalysisPage: React.FC = () => {
         }).filter((avg): avg is number => avg !== null);
 
         managerPerformances.forEach(avg => {
-            if (avg >= 70) {
-                distribution['Yüksek (>70%)']++;
-            } else if (avg >= 50) {
-                distribution['Orta (50-69%)']++;
+            if (avg >= 4.0) {
+                distribution['Yüksek (4.0+)']++;
+            } else if (avg >= 3.0) {
+                distribution['Orta (3.0-3.99)']++;
             } else {
-                distribution['Düşük (<50%)']++;
+                distribution['Düşük (<3.0)']++;
             }
         });
 

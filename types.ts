@@ -130,12 +130,46 @@ export interface AnomalyDetectionResponse {
     anomalies: Anomaly[];
 }
 
+export interface Notification {
+  id: string;
+  type: 'anomaly' | 'high_turnover_risk';
+  message: string;
+  storeId: string;
+  storeName: string;
+  isRead: boolean;
+  timestamp: string;
+}
+
+export interface RiskRadarResponse {
+    summary: string;
+    potentialRisks: {
+        storeName: string;
+        riskType: 'Düşen Performans' | 'Toksik Kültür' | 'Tükenmişlik Sinyalleri';
+        description: string;
+        evidence: string;
+        urgency: 'Yüksek' | 'Orta';
+    }[];
+}
+
+export interface ActionAnalysisResponse {
+    summary: string;
+    analyzedActions: {
+        storeName: string;
+        topic: string;
+        actionTaken: string;
+        analysis: 'Pozitif Değişim' | 'Negatif Değişim' | 'Değişim Gözlenmedi';
+        evidence: string;
+    }[];
+}
+
 export interface AIAnalysisState {
   summary: { result: string | null; loading: boolean; error: string | null; fingerprint?: string | null; };
   focus: { result: AIAnalysisResponse | null; loading: boolean; error: string | null; fingerprint?: string | null; };
   turnover: { result: TurnoverRiskAnalysis | null; loading: boolean; error: string | null; fingerprint?: string | null; };
   success: { result: SuccessAnalysisResponse | null; loading: boolean; error: string | null; fingerprint?: string | null; };
   anomalies: { result: AnomalyDetectionResponse | null; loading: boolean; error: string | null; fingerprint?: string | null; };
+  riskRadar: { result: RiskRadarResponse | null; loading: boolean; error: string | null; fingerprint?: string | null; };
+  actionAnalysis: { result: ActionAnalysisResponse | null; loading: boolean; error: string | null; fingerprint?: string | null; };
 }
 
 export interface ChatMessage {
@@ -149,4 +183,52 @@ export interface UploadedFile {
     size: number;
     uploadDate: string;
     rawData?: any[][];
+}
+
+export interface StoreInterview {
+    id: string;
+    startTime: string;
+    endTime: string;
+    hrResponsible: string;
+    interviewType: 'Online' | 'Yüz yüze';
+    visitDate: string;
+    opsManager: string;
+    regionalManager: string;
+    storeCode: string;
+    storeName: string;
+    storeOfficial: string;
+    visitReason: string;
+    employeeMotivation: string;
+    managerCommunication: string;
+    workloadLevel: string;
+    fairShiftPlan: string;
+    mainDifficulties: string;
+    seriousSituation: string;
+    hrFeedback: string;
+    hrAwarenessLevel: string;
+    visualsPresent: string;
+    otherDeptIssues: string;
+    intervieweeCount: number;
+    competencyEvaluation: string;
+    generalComment: string;
+    timestamp: string;
+}
+
+export interface ExitInterview {
+    id: string;
+    employeeId: string;
+    storeCode: string;
+    storeName: string;
+    fullName: string;
+    position: string;
+    startDate: string;
+    exitDate: string;
+    phone: string;
+    exitReasonCategory: string;
+    subExitReason: string;
+    detailedReason: string;
+    explanation: string;
+    regionalManager: string;
+    opsManager: string;
+    timestamp: string;
 }

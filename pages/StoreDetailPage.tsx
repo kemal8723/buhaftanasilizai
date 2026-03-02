@@ -370,8 +370,8 @@ const StoreDetailPage: React.FC = () => {
                      <StatCard 
                         icon="sentiment_satisfied" 
                         title="Genel Memnuniyet" 
-                        value={`${store.satisfaction}%`} 
-                        tooltipText="Bu mağazadaki olumlu geri bildirimlerin yüzdesi."
+                        value={`${store.satisfaction.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / 5`}
+                        tooltipText="Bu mağazadaki çalışanların verdiği 1-5 arası puanların ortalaması."
                     />
                     <StatCard 
                         icon="rate_review" 

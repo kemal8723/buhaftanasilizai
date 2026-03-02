@@ -10,7 +10,10 @@ import SettingsPage from './pages/SettingsPage';
 import StoreDetailPage from './pages/StoreDetailPage';
 import StoresListPage from './pages/StoresListPage';
 import RegionAnalysisPage from './pages/RegionAnalysisPage';
+import StoreInterviewPage from './pages/StoreInterviewPage';
+import ExitInterviewPage from './pages/ExitInterviewPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import GuidePage from './pages/PresentationPage'; // This file now contains the Guide
 import { DataProvider, useData } from './DataContext';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -36,6 +39,9 @@ const AppRoutes: React.FC = () => {
             <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
             <Route path="/store/:storeId" element={<ProtectedRoute><StoreDetailPage /></ProtectedRoute>} />
             <Route path="/stores" element={<ProtectedRoute><StoresListPage /></ProtectedRoute>} />
+            <Route path="/store-interview" element={<ProtectedRoute><StoreInterviewPage /></ProtectedRoute>} />
+            <Route path="/exit-interview" element={<ProtectedRoute><ExitInterviewPage /></ProtectedRoute>} />
+            <Route path="/guide" element={<ProtectedRoute><GuidePage /></ProtectedRoute>} />
             <Route path="/" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />
         </Routes>
     );

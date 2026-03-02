@@ -17,7 +17,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
         </div>
         <div className="auth-form-panel">
             {children}
-            <p className="credit-text">Kemal Gülcan tarafından tasarlanmıştır. v1.0</p>
+            <p className="credit-text">v1.2</p>
         </div>
     </div>
   );
