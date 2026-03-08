@@ -541,11 +541,11 @@ const StoreInterviewPage: React.FC = () => {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -20 }}
-                            className="w-full max-w-5xl mx-auto"
+                            className="w-full"
                         >
-                            <div className="bg-white rounded-[2rem] shadow-2xl overflow-hidden border border-slate-100">
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200">
                                 {/* Stepper Header */}
-                                <div className="bg-slate-50/50 border-b border-slate-100 p-8 md:p-12">
+                                <div className="bg-slate-50/50 border-b border-slate-200 p-8 md:p-12">
                                     <div className="flex items-center justify-between mb-10">
                                         <div>
                                             <h2 className="text-3xl font-bold text-slate-900">Yeni Mağaza Görüşme Formu</h2>
@@ -556,7 +556,7 @@ const StoreInterviewPage: React.FC = () => {
                                         </button>
                                     </div>
 
-                                    <div className="relative flex justify-between max-w-4xl mx-auto">
+                                    <div className="relative flex justify-between max-w-5xl mx-auto mt-8">
                                         {/* Progress Line */}
                                         <div className="absolute top-5 left-0 w-full h-0.5 bg-slate-200 -z-0">
                                             <motion.div 
